@@ -2,6 +2,8 @@
 
 에이전트의 경험 → 사실 → 판단 → 행동 규칙을 쌓는 메모리 시스템 + Claude Code mods. 설계: [docs/DESIGN.md](docs/DESIGN.md)
 
+**윈도우(회사 PC)는 [docs/SETUP-WINDOWS.md](docs/SETUP-WINDOWS.md)를 따르세요.**
+
 ## 설치 (Mac / Windows 공통)
 ```
 git clone <이 저장소> ~/workspace/agent-memory
