@@ -1,12 +1,42 @@
 {
   "name": "memory-lens",
-  "version": "0.2.0",
-  "description": "agent-memory Memory Health pane: 기억 현황, 판단 변화, 승인 대기 제안을 보여주고 버튼으로 승인/거절",
+  "version": "0.3.0",
+  "description": "agent-memory: 프롬프트마다 관련 기억 recall + Memory Health pane(승인/거절 버튼, 이번에 꺼낸 기억)",
   "types": "./types/index.d.ts",
   "userConfig": {
-    "machine": { "type": "string", "title": "PC 이름", "description": "amem config의 machine과 같게 (예: mac, win-work)", "default": "mac" },
-    "store": { "type": "string", "title": "store 경로", "description": "보여줄 기억 저장소 절대경로 (비우면 ~/workspace/memory-personal)", "default": "" },
-    "scope": { "type": "string", "title": "store 종류", "description": "amem --store 값", "options": ["personal", "work"], "default": "personal" },
-    "engineDir": { "type": "string", "title": "엔진 경로", "description": "agent-memory/engine 절대경로 (비우면 ~/workspace/agent-memory/engine)", "default": "" }
+    "machine": {
+      "type": "string",
+      "title": "PC 이름",
+      "description": "amem config의 machine과 같게 (예: mac, win-work)",
+      "default": "mac"
+    },
+    "store": {
+      "type": "string",
+      "title": "store 경로",
+      "description": "보여줄 기억 저장소 절대경로 (비우면 ~/workspace/memory-personal)",
+      "default": ""
+    },
+    "scope": {
+      "type": "string",
+      "title": "store 종류",
+      "description": "amem --store 값",
+      "options": [
+        "personal",
+        "work"
+      ],
+      "default": "personal"
+    },
+    "engineDir": {
+      "type": "string",
+      "title": "엔진 경로",
+      "description": "agent-memory/engine 절대경로 (비우면 ~/workspace/agent-memory/engine)",
+      "default": ""
+    },
+    "recall": {
+      "type": "boolean",
+      "title": "recall 사용",
+      "description": "프롬프트마다 관련 기억을 찾아 Claude에게 함께 전달",
+      "default": true
+    }
   }
 }

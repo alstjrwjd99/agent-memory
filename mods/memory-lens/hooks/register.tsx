@@ -1,8 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 
-import type { Health, PendingItem } from '../types'
-import { changeLine, classifyPath, clip, pendingItems, resolvePaths } from './parse.ts'
+import type { Health, LastRecall, PendingItem, RecallHit } from '../types'
+import { changeLine, classifyPath, clip, pendingItems, resolvePaths, shouldRecall } from './parse.ts'
 
 const PANE = 'memory-lens'
 const TITLE = '🧠 Memory'
@@ -12,6 +12,26 @@ const busy = atom({ plugin: 'memory-lens', key: 'busy' } as const, null as strin
 const message = atom({ plugin: 'memory-lens', key: 'message' } as const, null as string | null)
 const saved = atom({ plugin: 'memory-lens', key: 'saved' } as const, [] as { at: number; name: string }[])
 const turns = atom({ plugin: 'memory-lens', key: 'turns' } as const, 0)
+const lastRecall = atom({ plugin: 'memory-lens', key: 'recall' } as const, null as LastRecall | null)
+const KIND_LABEL: Record<string, string> = { opinion: '판단', procedure: '절차', observation: '관찰', experience: '경험', world: '사실' }
+
+// 엔진 recall 호출 (LLM 없음). 실패하면 null → 프롬프트는 그대로 진행
+async function runRecall($: EngineInterface, options: PluginOptions, query: string): Promise<{ context: string; scope: string; hits: RecallHit[] } | null> {
+  const { engineDir } = await paths($, options)
+  const cwd = await $.session.cwd()
+  // 매 프롬프트마다 uv가 프로젝트를 다시 확인하지 않게 venv의 amem을 직접 실행 (없으면 uv run)
+  const direct = [`${engineDir}/.venv/bin/amem`, `${engineDir}/.venv/Scripts/amem.exe`]
+  let exe: string[] = ['uv', 'run', '--project', engineDir, 'amem']
+  for (const candidate of direct) {
+    if (await $.fs.exists(candidate)) {
+      exe = [candidate]
+      break
+    }
+  }
+  const r = await $.process.run([...exe, 'recall', query, '--cwd', cwd, '--json'], { timeoutMs: 5_000 })
+  if (r.exitCode !== 0) return null
+  return JSON.parse(r.stdout) as { context: string; scope: string; hits: RecallHit[] }
+}
 
 async function paths($: EngineInterface, options: PluginOptions): Promise<{ store: string; engineDir: string }> {
   const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE')) ?? ''
@@ -73,6 +93,24 @@ export const register: Register = (on, options) => {
     return { text: isPlaced ? 'memory-lens: 기억 현황 pane을 열었어요.' : '터미널 폭이 좁아 pane을 못 띄웠어요. 창을 넓혀주세요.' }
   })
 
+  // recall: 사용자가 보낸 프롬프트에 관련 기억을 보이지 않는 context로 붙인다
+  on('prompt.submit', async ($, e, next) => {
+    if (options.recall === false || !shouldRecall(e.text)) return next(e)
+    // 엔진 자신이 띄운 claude -p에는 붙이지 않음 (기억이 기억 추출을 오염시키지 않게)
+    if ((await $.env.get('AMEM_INTERNAL')) === '1') return next(e)
+    let found: Awaited<ReturnType<typeof runRecall>> = null
+    try {
+      found = await runRecall($, options, e.text)
+    } catch {}
+    if (!found || found.hits.length === 0 || !found.context) {
+      await update($, lastRecall, () => ({ at: Date.now(), query: e.text, scope: found?.scope ?? '-', hits: [] }))
+      return next(e)
+    }
+    await update($, lastRecall, () => ({ at: Date.now(), query: e.text, scope: found.scope, hits: found.hits }))
+    $.ui.status(`🧠 recall ${found.hits.length}개`)
+    return next({ ...e, context: [...(e.context ?? []), found.context] })
+  }).catch(($, e, next) => next(e))
+
   on('turn.complete', async ($, e, next) => {
     await update($, turns, n => n + 1)
     void reload($, options)
@@ -100,6 +138,7 @@ export const register: Register = (on, options) => {
     const working = await read($, busy)
     const msg = await read($, message)
     const turnCount = await read($, turns)
+    const rc = await read($, lastRecall)
     const width = Math.max(24, (e.viewport?.columns ?? 44) - 14)
     const c = h?.counts
 
@@ -119,6 +158,18 @@ export const register: Register = (on, options) => {
         {h && h.recent_changes.length > 0 && <Text bold>─ Recent Reflection ─</Text>}
         {h?.recent_changes.map(ch => (
           <Text key={`ch-${ch.id}`}>{changeLine(ch, width - 12)}</Text>
+        ))}
+
+        <Text bold>─ 이번에 꺼낸 기억 {rc ? `(${rc.scope})` : ''} ─</Text>
+        {!rc && <Text dimColor>아직 없음 (프롬프트를 보내면 표시)</Text>}
+        {rc && rc.hits.length === 0 && <Text dimColor>관련 기억 없음: "{clip(rc.query, width - 18)}"</Text>}
+        {rc?.hits.map(h => (
+          <Box key={`rc-${h.id}`} flexDirection="column">
+            <Text>
+              {KIND_LABEL[h.kind] ?? h.kind} {clip(h.label, width - 6)}
+            </Text>
+            <Text dimColor>  {clip(`${h.score} · ${h.why.join(', ')}`, width)}</Text>
+          </Box>
         ))}
 
         <Text bold>─ 승인 대기 {items.length} ─</Text>

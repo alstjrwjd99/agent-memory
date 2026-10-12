@@ -80,6 +80,26 @@ def apply_item(store: Store, pid: str, it: dict) -> str:
             return f"#{it['n']} observation 갱신 {o.id} ({it['subject']})"
         o = store.add("observation", {"subject": it["subject"], "evidence": it["sources"], "valid_from": today(), "valid_to": None}, it["summary"])
         return f"#{it['n']} 새 observation {o.id} ({it['subject']})"
+    if op == "revise":
+        item = store.get(it["id"])
+        if not item:
+            return f"#{it['n']} 대상 없음 {it['id']}"
+        if item.meta.get("status") not in ("active", "low_confidence"):
+            return f"#{it['n']} {item.id}는 {item.meta.get('status')} 상태라 수정하지 않음"
+        # 이전 문장/규칙은 versions에 보존 (git 이력과 별개로 파일만 봐도 변천을 알 수 있게)
+        prev = {"at": item.meta.get("updated_at"), "statement": item.meta.get("statement"), "rules": item.meta.get("rules"), "by": pid}
+        # 수정 근거는 versions에만 기록 (evidence에 넣으면 표현만 바꿔도 confidence가 오름)
+        prev["revised_with"] = it["supports"]
+        item.meta.setdefault("versions", []).append({k: v for k, v in prev.items() if v is not None})
+        if item.kind == "opinion":
+            item.meta["statement"] = it["statement"]
+            item.body = it["statement"]
+        else:
+            item.meta["rules"] = it["rules"]
+            item.body = f"트리거: {item.meta.get('trigger')}\n\n" + "\n".join(f"{k}. {r}" for k, r in enumerate(it["rules"], 1))
+        _history(item.meta, pid, f"수정: {it['reason']}")
+        store.save(item)
+        return f"#{it['n']} {item.id} 수정 (버전 {len(item.meta['versions']) + 1})"
     if op == "invalidate":
         item = store.get(it["id"])
         if not item:
@@ -131,4 +151,6 @@ def describe(it: dict) -> str:
         return f"[관찰] {it['subject']}: {it['summary'][:80]}"
     if op == "invalidate":
         return f"[무효화] {it['id']}: {it['reason']}"
+    if op == "revise":
+        return f"[수정] {it['id']} → {it['statement'] or ' → '.join(it['rules'])}"
     return str(it)

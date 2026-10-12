@@ -64,6 +64,12 @@ export function pendingItems(files: readonly string[]): { pid: string; n: number
   return out
 }
 
+// recall을 건너뛸 프롬프트: 슬래시 명령, 너무 짧은 대답(ㄱㄱ, 응 등)
+export function shouldRecall(text: string): boolean {
+  const t = text.trim()
+  return t.length >= 6 && !t.startsWith('/')
+}
+
 export const clip = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
 // 판단 변화 한 줄: ↑ / ↓ / NEW

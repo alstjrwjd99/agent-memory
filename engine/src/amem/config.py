@@ -18,8 +18,18 @@ class Config:
     # claude-cli: Claude Code 로그인 재사용 / sdk: anthropic SDK (API 키 또는 ant 로그인 필요)
     backend: str = "claude-cli"
     export_threshold: float = 0.7
+    # 이 경로로 시작하는 cwd는 work store (recall의 store 자동 선택)
+    work_paths: tuple[str, ...] = ()
     # Claude Code 홈 (export 대상 memory 폴더 계산용)
     claude_home: Path = field(default_factory=lambda: Path.home() / ".claude")
+
+    def scope_for(self, cwd: str) -> str:
+        """cwd가 work_paths 아래면 work, 아니면 personal (맥/윈도우 경로, 대소문자 무시)."""
+        norm = lambda p: p.replace("\\", "/").rstrip("/").lower()  # noqa: E731
+        c = norm(cwd)
+        if any(c == norm(w) or c.startswith(norm(w) + "/") for w in self.work_paths if w) and "work" in self.stores:
+            return "work"
+        return "personal"
 
     def store(self, scope: str) -> Path:
         if scope not in self.stores:
@@ -44,6 +54,7 @@ def load(path: Path | None = None) -> Config:
         model=str(raw.get("model") or DEFAULT_MODEL),
         backend=str(raw.get("backend") or "claude-cli"),
         export_threshold=float(raw.get("export_threshold") or 0.7),
+        work_paths=tuple(str(p) for p in raw.get("work_paths") or []),
         claude_home=Path(raw["claude_home"]).expanduser() if raw.get("claude_home") else Path.home() / ".claude",
     )
 
@@ -56,5 +67,6 @@ def write_default(path: Path, machine: str, personal: str | None, work: str | No
         "model": DEFAULT_MODEL,
         "backend": "claude-cli",
         "export_threshold": 0.7,
+        "work_paths": [],
     }
     path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8", newline="\n")

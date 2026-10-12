@@ -62,8 +62,27 @@ events (mod, 자동)
   → amem reflect   새 episode + 기존 판단 → 제안(proposals/*.json) 생성, 적용 X
   → amem review / apply / reject   사용자 승인 (ADD / 근거 UPDATE / INVALIDATE, DELETE 없음)
   → amem export    conf ≥ 0.7인 opinion/procedure → Claude Code memory 폴더 (amem_*.md + MEMORY.md 관리 블록)
-  → amem health    Memory Health (.amem/health-<machine>.json, memory-lens가 읽을 예정)
+  → amem health    Memory Health (.amem/health-<machine>.json, memory-lens pane이 읽음)
+
+amem recall "<프롬프트>" --cwd <폴더>   (memory-lens가 프롬프트마다 호출, LLM 없음, 약 0.4초)
+  → 관련 기억 상위 5개를 프롬프트 옆 보이지 않는 context로 붙임
 ```
+
+## recall (Hindsight TEMPR 경량판)
+- 점수 = BM25(영문 단어 + 한국어 글자 2-gram) × 종류 가중(절차 1.3, 판단 1.2, 관찰 1.0, 경험 0.8)
+  × 같은 프로젝트 1.6(cwd 경로 ↔ episode project/관찰 subject) × 확신도(판단) 또는 최신성(반감기 45일)
+- 링크 확장: 걸린 episode를 근거로 삼는 판단/관찰도 함께 (그래프 한 단계)
+- active만 대상 (invalidated/superseded/low_confidence 제외), 최소 점수 미달이면 아무것도 안 붙임
+- store 자동 선택: config `work_paths` 아래 cwd면 work
+- 엔진 자신의 `claude -p`(AMEM_INTERNAL=1)에는 recall 안 붙임: 기억이 기억 추출을 오염시키지 않게
+- 검색기는 `Retriever` 프로토콜: 임베딩 / 실제 Hindsight로 교체 가능 (의미 검색은 아직 없음)
+- pane "이번에 꺼낸 기억"에 무엇을 왜 꺼냈는지 표시 (Memory Inspector)
+
+## 버전 관리
+- 엔진이 store를 바꾸는 명령(promote, reflect, run, apply, reject)마다 store git에 자동 커밋. 메시지에 변경 내용
+- push는 자동 X: `amem sync` (pull --rebase + push)
+- 판단 문장 자체 수정: reflect의 `revisions` → `revise` 제안. 이전 문장은 파일 `versions`와 git 둘 다에 보존
+- `amem history <id>`: 파일 내 versions + 확신도 이력 + git diff 이력
 - LLM 백엔드: 기본 `claude -p --json-schema` (두 PC의 Claude Code 로그인 재사용, API 키 불필요). `backend: sdk`면 anthropic SDK.
 - 엔진의 `claude -p` 호출은 `AMEM_INTERNAL=1`로 띄워 memory-events가 기록하지 않음.
 - 신호 종류: correction, interrupted, retry_success, repeated_failure, repeated_sequence(읽기 전용 반복 제외).
@@ -75,5 +94,6 @@ events (mod, 자동)
 0. memory-lens 현황판 ✅
 1. memory-events 수집 + 두 PC 설치 ✅(맥) / 윈도우 설치 대기
 2. engine: promote, reflect, review, export, health ✅ (2026-10-12, 실제 claude -p로 E2E 확인)
-3. Reflection Pane + Memory Health
-4. recall 주입 + Memory Inspector
+3. Memory Health pane + 승인/거절 버튼 ✅ (memory-lens v0.2)
+4. recall 주입 + Memory Inspector + git 버전 관리 ✅ (memory-lens v0.3, 엔진 recall/history/sync)
+5. 다음: 의미 검색(임베딩 또는 실제 Hindsight), 윈도우 실사용 검증

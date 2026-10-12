@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { changeLine, classifyPath, describe, pendingItems, resolvePaths } from './parse.ts'
+import { changeLine, classifyPath, describe, pendingItems, resolvePaths, shouldRecall } from './parse.ts'
 
 test('기억/스킬 경로 판정 (맥/윈도우)', () => {
   expect(classifyPath('/Users/a/.claude/projects/-Users-a/memory/feedback_x.md')).toEqual({ kind: 'memory', name: 'feedback_x' })
@@ -29,6 +29,12 @@ test('승인 대기 항목만, 깨진 파일은 무시', () => {
     { pid: 'p1', n: 3, text: '[절차] T' },
   ])
   expect(describe({ n: 1, op: 'evidence', status: 'pending', id: 'op_1', supports: ['a'], contradicts: [] })).toBe('[근거] op_1 +1 / 반례 +0')
+})
+
+test('recall 대상 프롬프트 판정', () => {
+  expect(shouldRecall('ㄱㄱ')).toBe(false)
+  expect(shouldRecall('/memory-lens')).toBe(false)
+  expect(shouldRecall('recall 만들어줘 그리고 버전 관리도')).toBe(true)
 })
 
 test('판단 변화 표시', () => {

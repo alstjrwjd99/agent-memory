@@ -11,6 +11,10 @@ export type Health = {
   recent_changes: { id: string; label: string; from: number | null; to: number; at: string }[]
 }
 
+// amem recall --json 의 hit (Memory Inspector용)
+export type RecallHit = { id: string; kind: string; score: number; why: string[]; label: string }
+export type LastRecall = { at: number; query: string; scope: string; hits: RecallHit[] }
+
 // 승인 대기 제안 한 항목 (화면용으로 요약)
 export type PendingItem = { pid: string; n: number; text: string }
 
@@ -23,6 +27,7 @@ declare module 'claude-code' {
       message: string | null
       saved: { at: number; name: string }[]
       turns: number
+      recall: LastRecall | null
     }
   }
 }

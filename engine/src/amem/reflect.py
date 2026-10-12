@@ -17,6 +17,7 @@ PROMPT = """너는 에이전트 기억 시스템의 reflect 단계다. 경험(ep
 - 새 procedure는 반복된 작업 방식: trigger(언제) + rules(순서 있는 단계). 같은 패턴이 episode 2개 이상에서 보일 때만.
 - observations: 특정 대상(프로젝트, 사용자 작업 스타일, 시스템)에 대한 요약. subject는 짧은 이름.
 - invalidations: 근거가 명확히 뒤집혀 더 이상 유효하지 않은 기존 항목만.
+- revisions: 기존 opinion/procedure의 방향은 맞지만 표현이나 범위를 새 episode에 맞게 다듬어야 할 때. opinion은 statement, procedure는 rules를 채우고 supports에 근거 episode를 넣어라. 새 판단을 따로 만들기보다 기존 것을 다듬는 쪽을 우선한다.
 - confidence 숫자는 만들지 마라 (시스템이 근거 개수로 계산한다).
 - 확실하지 않으면 제안하지 마라. 빈 배열도 정상이다. 한국어로.
 
@@ -97,6 +98,12 @@ def _clean(proposal: dict, ep_ids: set[str], item_ids: set[str]) -> list[dict]:
     for inv in proposal.get("invalidations", []):
         if inv["id"] in item_ids:
             items.append({"op": "invalidate", "id": inv["id"], "reason": inv["reason"]})
+    for rv in proposal.get("revisions", []):
+        s = ok(rv["supports"])
+        is_op, is_pr = rv["id"].startswith("op_"), rv["id"].startswith("pr_")
+        if rv["id"] in item_ids and s and ((is_op and rv["statement"].strip()) or (is_pr and rv["rules"])):
+            items.append({"op": "revise", "id": rv["id"], "statement": rv["statement"] if is_op else "",
+                          "rules": rv["rules"] if is_pr else [], "supports": s, "reason": rv["reason"]})
     for n, it in enumerate(items, 1):
         it["n"] = n
         it["status"] = "pending"

@@ -24,6 +24,9 @@ uv run amem reflect            # 판단 변화 제안 생성
 uv run amem review             # 제안 확인
 uv run amem apply <id> --only 1,3   /  uv run amem reject <id>
 uv run amem export             # 확신도 높은 판단을 Claude Code 메모리로
+uv run amem recall "질문" --cwd .   # 관련 기억 꺼내기 (memory-lens가 프롬프트마다 자동 호출)
+uv run amem history <id>       # 한 기억의 변천 (versions + 확신도 + git diff)
+uv run amem sync               # store git pull --rebase + push
 uv run amem --store work ...   # 업무 store 대상
 ```
 설정: `~/.config/agent-memory/config.yaml` (윈도우: `%USERPROFILE%\.config\agent-memory\config.yaml`)
