@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 # 엔진이 쓰는 경로만 커밋 (events/는 세션 중 계속 쓰이는 원본 로그라 git에 넣지 않음)
-TRACKED = ["episodes", "world", "observations", "opinions", "procedures", "proposals", ".gitignore"]
+TRACKED = ["episodes", "world", "observations", "opinions", "procedures", "heuristics", "proposals", ".gitignore"]
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
