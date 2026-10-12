@@ -1,0 +1,9 @@
+{
+  "name": "public-guard",
+  "version": "0.1.0",
+  "description": "공개 GitHub 저장소에 commit/push 할 때 고객사·내부 프로젝트명 같은 민감 식별자가 나가면 막는다 (목록은 로컬 파일에만)",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "termsFile": { "type": "string", "title": "민감어 목록 파일", "description": "한 줄에 하나. 비우면 ~/.config/agent-memory/sensitive-terms.txt", "default": "" }
+  }
+}

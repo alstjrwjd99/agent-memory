@@ -15,6 +15,10 @@
     {
       "name": "env-guard",
       "source": "./mods/env-guard"
+    },
+    {
+      "name": "public-guard",
+      "source": "./mods/public-guard"
     }
   ]
 }
