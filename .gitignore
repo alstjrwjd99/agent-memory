@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.DS_Store
+__pycache__/
+.venv/
+mods/*/.claude-plugin/types/
+mods/*/tsconfig.json
+.omc/
+engine/.venv/
+engine/.pytest_cache/
+*.egg-info/

@@ -1,0 +1,1 @@
+{ "name": "env-guard", "version": "0.1.0", "description": "git add/commit에 .env 파일이 들어가면 Bash 호출을 막는다" }

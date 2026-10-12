@@ -1,0 +1,13 @@
+{
+  "name": "memory-events",
+  "version": "0.1.0",
+  "description": "도구 호출/사용자 교정 신호를 PC별·세션별 events.jsonl로 수집 (내용 없이 포인터만)",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "machine": { "type": "string", "title": "PC 이름", "description": "events 폴더 이름 (예: mac, win-work)", "default": "mac" },
+    "defaultScope": { "type": "string", "title": "기본 scope", "description": "workPaths에 안 걸리면 이 scope로 저장", "options": ["personal", "work"], "default": "personal" },
+    "workPaths": { "type": "string", "title": "업무 경로", "description": "이 경로로 시작하는 cwd는 work scope (쉼표 구분)", "default": "" },
+    "personalStore": { "type": "string", "title": "개인 store 경로", "description": "memory-personal 저장소 절대경로", "default": "" },
+    "workStore": { "type": "string", "title": "업무 store 경로", "description": "memory-work 저장소 절대경로", "default": "" }
+  }
+}

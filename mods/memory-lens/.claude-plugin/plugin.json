@@ -1,0 +1,1 @@
+{ "name": "memory-lens", "version": "0.1.0", "description": "에이전트 기억(Working/Episodic/Semantic/Procedural) 현황 pane + 저장 순간 toast", "types": "./types/index.d.ts" }
