@@ -1,21 +1,22 @@
 // 흐름 요약 파싱/표시 유틸 (순수 함수, 테스트 대상)
 import type { Flow, Step } from '../types'
 
-const STATUSES = new Set(['done', 'now', 'next'])
+export const STATUSES = new Set(['done', 'now', 'next'])
 
 // 모델 응답에서 첫 JSON 객체를 꺼내 검증. 이상하면 null
 export function parseFlow(text: string, project: string, now: number): Flow | null {
   const m = /\{[\s\S]*\}/.exec(text)
   if (!m) return null
   try {
-    const d = JSON.parse(m[0]) as { goal?: unknown; steps?: unknown; waiting?: unknown }
+    const d = JSON.parse(m[0]) as { goal?: unknown; steps?: unknown; waiting?: unknown; detail?: unknown }
     const steps = (Array.isArray(d.steps) ? d.steps : [])
       .filter((s): s is Step => !!s && typeof s.label === 'string' && STATUSES.has(s.status))
       .map(s => ({ label: s.label.trim().slice(0, 40), status: s.status }))
       .slice(0, 12)
     if (steps.length === 0) return null
     const waiting = typeof d.waiting === 'string' && d.waiting.trim() && d.waiting.trim() !== 'null' ? d.waiting.trim().slice(0, 120) : null
-    return { project, goal: typeof d.goal === 'string' ? d.goal.trim().slice(0, 60) : '', steps, waiting, at: now }
+    const detail = typeof d.detail === 'string' && d.detail.trim() && d.detail.trim() !== 'null' ? d.detail.trim().slice(0, 60) : null
+    return { project, goal: typeof d.goal === 'string' ? d.goal.trim().slice(0, 60) : '', steps, detail, waiting, at: now }
   } catch {
     return null
   }
@@ -68,15 +69,16 @@ export function transcriptDigest(messages: readonly { role: string; text: string
 export function buildPrompt(digest: string, prev: Flow | null): string {
   return `아래는 사용자와 AI 코딩 에이전트의 최근 대화다. 사용자가 다른 일을 하다 돌아왔을 때 한눈에 보도록 "작업 흐름"을 요약하라.
 
-규칙:
-- goal: 지금 하고 있는 큰 목표 한 구절 (20자 이내)
-- steps: 이 목표의 단계 3~8개. status는 done(끝남) / now(지금, 1개) / next(남음). label은 12자 이내 명사구
-- 이전 흐름이 있으면 그 단계 이름을 최대한 유지하고 상태만 갱신하라. 목표가 바뀌었으면 새로 짜라
+규칙 (2단 흐름):
+- goal: 이 프로젝트의 큰 목표 한 구절 (20자 이내). 중간에 끼어든 작은 작업(버그 수정, 화면 조정, 질문 답변)으로 바꾸지 마라
+- steps: 큰 목표의 굵직한 단계 3~8개. status는 done(끝남) / now(지금, 1개) / next(남음). label은 12자 이내 명사구
+- detail: 지금 실제로 손대고 있는 작은 작업 (25자 이내). 큰 단계에 들어가지 않는 세부 작업은 여기에만 쓴다
+- 이전 흐름이 있으면 goal과 steps 이름을 그대로 유지하고 상태만 갱신하라. 사용자가 명시적으로 다른 큰 일로 넘어갔을 때만 새로 짜라
 - waiting: 에이전트의 마지막 답변이 사용자에게 결정/확인을 묻고 끝났으면 그 질문을 25자 이내로, 아니면 null
-- JSON만 출력: {"goal": "...", "steps": [{"label": "...", "status": "done"}], "waiting": "..." 또는 null}
+- JSON만 출력: {"goal": "...", "steps": [{"label": "...", "status": "done"}], "detail": "..." 또는 null, "waiting": "..." 또는 null}
 
 ## 이전 흐름
-${prev ? JSON.stringify({ goal: prev.goal, steps: prev.steps, waiting: prev.waiting }) : '(없음)'}
+${prev ? JSON.stringify({ goal: prev.goal, steps: prev.steps, detail: prev.detail, waiting: prev.waiting }) : '(없음)'}
 
 ## 최근 대화
 ${digest}`
@@ -86,3 +88,18 @@ ${digest}`
 export const projectOf = (cwd: string): string => cwd.replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop() || cwd
 
 export const storeKey = (cwd: string): string => `flow:${cwd.replace(/\\/g, '/').toLowerCase()}`
+
+// 세로 흐름: 끝난 단계가 많으면 앞쪽을 "✓ N개 완료"로 접는다
+export type FlowRow = { kind: 'folded'; count: number } | ({ kind: 'step' } & Step)
+
+export function verticalSteps(steps: readonly Step[], keepDone = 3): FlowRow[] {
+  const doneIdx = steps.map((s, i) => (s.status === 'done' ? i : -1)).filter(i => i >= 0)
+  const fold = Math.max(0, doneIdx.length - keepDone)
+  const out: FlowRow[] = []
+  if (fold > 0) out.push({ kind: 'folded', count: fold })
+  steps.forEach((s, i) => {
+    if (s.status === 'done' && doneIdx.indexOf(i) < fold) return
+    out.push({ kind: 'step', ...s })
+  })
+  return out
+}

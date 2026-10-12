@@ -1,7 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 
-import type { Health, LastRecall, PendingItem, RecallHit, Scope, StoreHealth } from '../types'
+import type { Flow, Health, LastRecall, PendingItem, RecallHit, Scope, StoreHealth } from '../types'
+import { buildPrompt, parseFlow, projectOf, storeKey, transcriptDigest, verticalSteps } from './flow.ts'
 import { changeLine, classifyPath, clip, countsLine, pendingItems, resolvePaths, shouldRecall } from './parse.ts'
 
 const PANE = 'memory-lens'
@@ -16,6 +17,40 @@ const lastRecall = atom({ plugin: 'memory-lens', key: 'recall' } as const, null 
 const loadedAt = atom({ plugin: 'memory-lens', key: 'loadedAt' } as const, 0)
 const KIND_LABEL: Record<string, string> = { opinion: '판단', procedure: '절차', observation: '관찰', experience: '경험', world: '사실' }
 const RELOAD_EVERY_MS = 30_000
+const flow = atom({ plugin: 'memory-lens', key: 'flow' } as const, null as Flow | null)
+const flowUpdating = atom({ plugin: 'memory-lens', key: 'flowUpdating' } as const, false)
+const toolsSince = atom({ plugin: 'memory-lens', key: 'toolsSince' } as const, 0)
+const turnsSinceFlow = atom({ plugin: 'memory-lens', key: 'turnsSinceFlow' } as const, 0)
+// 도구를 안 쓴 대화 턴도 이 횟수마다 한 번은 흐름 갱신 (내 답 필요 반영)
+const FLOW_EVERY_TURNS = 2
+const MARK = { done: '✓', now: '●', next: '○' } as const
+
+// 대화 요약 → 흐름 갱신 → 폴더별 저장 (세션이 바뀌어도 유지). haiku로 최근 40개 메시지만
+async function refreshFlow($: EngineInterface, options: PluginOptions): Promise<void> {
+  if (await read($, flowUpdating)) return
+  await update($, flowUpdating, () => true)
+  try {
+    const cwd = await $.session.cwd()
+    const messages = await $.session.messages()
+    if (!Array.isArray(messages) || messages.length === 0) return
+    const prev = await read($, flow)
+    const r = await $.model.complete({
+      model: String(options.flowModel || 'haiku'),
+      prompt: buildPrompt(transcriptDigest(messages), prev && prev.project === projectOf(cwd) ? prev : null),
+      maxTokens: 800,
+      timeoutMs: 30_000,
+    })
+    if (!r.isAnswered) return
+    const next = parseFlow(r.text, projectOf(cwd), Date.now())
+    if (!next) return
+    await update($, flow, () => next)
+    await $.store.set(storeKey(cwd), next)
+  } finally {
+    await update($, toolsSince, () => 0)
+    await update($, turnsSinceFlow, () => 0)
+    await update($, flowUpdating, () => false)
+  }
+}
 
 async function paths($: EngineInterface, options: PluginOptions) {
   const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE')) ?? ''
@@ -85,6 +120,10 @@ async function runRecall($: EngineInterface, options: PluginOptions, query: stri
 export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'memory-lens', description: '기억 현황 pane 열기' })
+    await $.command.register({ name: 'flow', description: '작업 흐름 지금 갱신' })
+    // 같은 폴더의 지난 흐름을 바로 보여줌
+    const saved = (await $.store.get(storeKey(await $.session.cwd()))) as Flow | undefined
+    if (saved && Array.isArray(saved.steps)) await update($, flow, () => ({ ...saved, detail: saved.detail ?? null }))
     void reload($, options)
     void $.ui.open({ id: PANE, title: TITLE })
     // 터미널에서 직접 amem을 돌려도 pane이 따라오도록 주기적으로 파일을 다시 읽음
@@ -96,6 +135,13 @@ export const register: Register = (on, options) => {
     await reload($, options)
     const { isPlaced } = await $.ui.open({ id: PANE, title: TITLE })
     return { text: isPlaced ? '기억 현황 pane을 열었어요.' : '터미널 폭이 좁아 pane을 못 띄웠어요. 창을 넓혀주세요.' }
+  })
+
+  on('command.run', { command: 'flow' }, async $ => {
+    await refreshFlow($, options)
+    const f = await read($, flow)
+    void $.ui.open({ id: PANE, title: TITLE })
+    return { text: f ? `흐름 갱신: ${f.goal}${f.detail ? ` (지금: ${f.detail})` : ''}` : '갱신할 대화가 아직 없어요.' }
   })
 
   // recall: 사용자가 보낸 프롬프트에 관련 기억을 보이지 않는 context로 붙인다
@@ -117,14 +163,25 @@ export const register: Register = (on, options) => {
   }).catch(($, e, next) => next(e))
 
   on('turn.complete', async ($, e, next) => {
+    const done = await next(e)
+    // 메인 대화의 정상 종료만 (서브에이전트, 엔진 내부 claude -p 제외)
+    if (e.agentId || (await $.env.get('AMEM_INTERNAL')) === '1') return done
     await update($, turns, n => n + 1)
     void reload($, options)
-    return next(e)
+    if (e.reason === 'answer' && options.flow !== false) {
+      const t = await update($, turnsSinceFlow, n => n + 1)
+      if ((await read($, toolsSince)) > 0 || t >= FLOW_EVERY_TURNS || !(await read($, flow))) {
+        // 턴 종료를 늦추지 않게 백그라운드로
+        void refreshFlow($, options).catch(() => {})
+      }
+    }
+    return done
   })
 
   // Claude가 Claude Code 메모리/스킬을 쓰면 알림
   on('tool.call', async ($, e, next) => {
     const ran = await next(e)
+    if (!e.agentId) await update($, toolsSince, n => n + 1).catch(() => {})
     if (e.tool !== 'Write' && e.tool !== 'Edit') return ran
     const hit = classifyPath(e.file_path)
     if (!hit || ran.deny !== undefined || ran.isError === true) return ran
@@ -145,6 +202,8 @@ export const register: Register = (on, options) => {
     const turnCount = await read($, turns)
     const rc = await read($, lastRecall)
     const at = await read($, loadedAt)
+    const f = await read($, flow)
+    const fUpdating = await read($, flowUpdating)
     const width = Math.max(24, (e.viewport?.columns ?? 44) - 14)
     const changes = all
       .flatMap(s => (s.health?.recent_changes ?? []).map(c => ({ ...c, scope: s.scope })))
@@ -153,6 +212,30 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column">
+        {f && (
+          <Box key="flow" flexDirection="column">
+            <Text>
+              <Text bold>📍 {f.project}</Text>
+              <Text dimColor>{fUpdating ? ' · 갱신 중…' : ''}</Text>
+            </Text>
+            {f.goal && <Text dimColor>목표: {clip(f.goal, width)}</Text>}
+            {verticalSteps(f.steps).map((row, i, rows) =>
+              row.kind === 'folded' ? (
+                <Text key="fold" dimColor> ✓ … {row.count}개 완료</Text>
+              ) : (
+                <Box key={`step-${i}`} flexDirection="column">
+                  <Text bold={row.status === 'now'} dimColor={row.status === 'done'} color={row.status === 'now' ? 'cyan' : undefined}>
+                    {' '}{MARK[row.status]} {clip(row.label, width - 4)}
+                  </Text>
+                  {row.status === 'now' && f.detail && <Text color="cyan"> │  └ 지금: {clip(f.detail, width - 12)}</Text>}
+                  {i < rows.length - 1 && <Text dimColor> │</Text>}
+                </Box>
+              ),
+            )}
+            {f.waiting && !working && <Text color="yellow">⏸ 내 답 필요: {clip(f.waiting, width - 10)}</Text>}
+            <Text dimColor>{'─'.repeat(Math.min(width, 40))}</Text>
+          </Box>
+        )}
         <Text bold>Memory Health</Text>
         {all.length === 0 && <Text dimColor>store 없음: 설정의 store 경로 확인</Text>}
         {all.map(s => (

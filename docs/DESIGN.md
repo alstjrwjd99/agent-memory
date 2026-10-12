@@ -97,7 +97,8 @@ amem recall "<프롬프트>" --cwd <폴더>   (memory-lens가 프롬프트마다
 3. Memory Health pane + 승인/거절 버튼 ✅ (memory-lens v0.2)
 4. recall 주입 + Memory Inspector + git 버전 관리 ✅ (memory-lens v0.3, 엔진 recall/history/sync)
 5. 출처 어댑터: git ✅ (`amem ingest git <repo> --since`), transcript / notion 예정
-6. 다음: 의미 검색(임베딩 또는 실제 Hindsight), 윈도우 실사용 검증
+6. 작업 흐름(2단: 큰 단계 + 지금 세부 작업 + 내 답 필요)을 memory-lens 패널 상단에 통합 ✅ (band 방식은 폐기: 사용자가 별도 공간 선호)
+7. 다음: 의미 검색(임베딩 또는 실제 Hindsight), 윈도우 실사용 검증
 
 ## 출처 어댑터 (과거 기록 → episode, 냉시동 해결)
 - git: prompt 커밋 ~ 다음 prompt 커밋 = 작업 단위. 커밋 제목/본문 + 변경 파일 목록만 (diff 원문 X)

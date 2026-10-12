@@ -31,3 +31,34 @@ test('pane에 personal과 work가 함께 보이고 work 제안에 승인 버튼�
     await ui.unmount()
   }
 })
+
+test('/flow 후 패널 맨 위에 2단 흐름(지금 세부 작업, 내 답 필요)이 그려진다', async ($, on) => {
+  mock.env(on, { HOME: '/Users/a' })
+  mock.store(on)
+  on('fs.exists', ($, e) => ({ value: e.path in FILES || DIRS.includes(e.path) }) as never)
+  on('fs.read', ($, e) => ({ value: FILES[e.path] ?? '' }) as never)
+  on('fs.list', () => ({ value: [] }) as never)
+  on('session.cwd', () => ({ value: '/Users/a/workspace/agent-memory' }) as never)
+  on('session.messages', () => ({ value: [{ role: 'user', text: '패널에 합쳐줘', toolUses: [] }] }) as never)
+  const reply = JSON.stringify({
+    goal: '기억 시스템 완성',
+    steps: ['설계', '엔진', 'recall', 'git 파일럿', '제안 검토', '윈도우 설치'].map((label, i) => ({ label, status: i < 4 ? 'done' : i === 4 ? 'now' : 'next' })),
+    detail: '흐름 패널 옮기기',
+    waiting: '위치 고르기',
+  })
+  on('model.complete', () => ({ value: { isAnswered: true, text: reply, usage: {} } }) as never)
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  const r = await $.command.run({ command: 'flow', args: '', origin: { kind: 'composer' } } as never)
+  expect(JSON.stringify(r)).toContain('지금: 흐름 패널 옮기기')
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'memory-lens', surface, component: 'Pane', requestId: 'memory-lens', props: { title: 'm' } as never })
+    expect(await ui.find({ type: 'Text', text: /📍 agent-memory/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /✓ … 1개 완료/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /● 제안 검토/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /└ 지금: 흐름 패널 옮기기/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /○ 윈도우 설치/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /⏸ 내 답 필요: 위치 고르기/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Memory Health/ })).toBeDefined()
+    await ui.unmount()
+  }
+})

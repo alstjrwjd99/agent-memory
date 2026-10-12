@@ -1,7 +1,7 @@
 {
   "name": "memory-lens",
-  "version": "0.4.0",
-  "description": "agent-memory: 프롬프트마다 관련 기억 recall + Memory Health pane(승인/거절 버튼, 이번에 꺼낸 기억)",
+  "version": "0.5.0",
+  "description": "agent-memory: 작업 흐름(2단) + Memory Health + 승인 대기 + 프롬프트마다 recall을 오른쪽 패널 하나에",
   "types": "./types/index.d.ts",
   "userConfig": {
     "machine": {
@@ -33,6 +33,18 @@
       "title": "recall 사용",
       "description": "프롬프트마다 관련 기억을 찾아 Claude에게 함께 전달",
       "default": true
+    },
+    "flow": {
+      "type": "boolean",
+      "title": "작업 흐름 표시",
+      "description": "턴이 끝날 때 haiku로 흐름 요약 (턴당 약 $0.001)",
+      "default": true
+    },
+    "flowModel": {
+      "type": "string",
+      "title": "흐름 요약 모델",
+      "description": "기본 haiku",
+      "default": "haiku"
     }
   }
 }

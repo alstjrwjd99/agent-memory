@@ -15,10 +15,6 @@
     {
       "name": "env-guard",
       "source": "./mods/env-guard"
-    },
-    {
-      "name": "flow-band",
-      "source": "./mods/flow-band"
     }
   ]
 }
