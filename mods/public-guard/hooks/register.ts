@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 
 import type { Visibility } from '../types'
-import { expandHome, findTerms, isPublishing, locate, parseTerms, parseVisibility, repoDirOf } from './scan.ts'
+import { commitMessages, expandHome, findTerms, isPublishing, locate, parseTerms, parseVisibility, repoDirOf } from './scan.ts'
 
 const visibility = atom({ plugin: 'public-guard', key: 'visibility' } as const, {} as Record<string, Visibility>)
 
@@ -31,7 +31,7 @@ async function terms($: EngineInterface, options: PluginOptions, home: string): 
   return (await $.fs.exists(file)) ? parseTerms(String(await $.fs.read(file))) : []
 }
 
-// 이번에 나갈 내용: 명령 문자열(커밋 메시지) + 업스트림 대비 변경 + 아직 안 올린 커밋 메시지 + 새 파일
+// 이번에 나갈 내용: 커밋 메시지 + 업스트림 대비 변경 + 아직 안 올린 커밋 메시지 + 새 파일
 async function outgoing($: EngineInterface, dir: string, command: string): Promise<string> {
   const upstream = (await git($, dir, ['rev-parse', '--abbrev-ref', '@{u}'])).trim()
   const diff = upstream
@@ -46,7 +46,7 @@ async function outgoing($: EngineInterface, dir: string, command: string): Promi
       added += `\n+++ b/${f}\n` + String(await $.fs.read(path)).split('\n').map(l => `+${l}`).join('\n')
     } catch {}
   }
-  return [command, logs, diff, added].join('\n')
+  return [...commitMessages(command), logs, diff, added].join('\n')
 }
 
 export const register: Register = (on, options) => {

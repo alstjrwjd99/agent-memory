@@ -9,6 +9,7 @@ export type Health = {
   fresh_episodes: number
   pending_proposals: number
   recent_changes: { id: string; label: string; from: number | null; to: number; at: string }[]
+  heuristics?: { active: number; candidates: { id: string; statement: string; evidence: number; level: string; parent: string | null }[] }
 }
 
 export type Scope = 'personal' | 'work'
@@ -16,8 +17,8 @@ export type Scope = 'personal' | 'work'
 // store별 health (없는 store는 목록에 안 들어감)
 export type StoreHealth = { scope: Scope; health: Health | null }
 
-// 승인 대기 제안 한 항목 (화면용으로 요약)
-export type PendingItem = { scope: Scope; pid: string; n: number; text: string }
+// 승인 대기: 원칙 후보 하나
+export type PendingItem = { scope: Scope; id: string; text: string; evidence: number }
 
 export type StepStatus = 'done' | 'now' | 'next'
 export type Step = { label: string; status: StepStatus }
@@ -34,7 +35,7 @@ export type Flow = {
 }
 
 // 다른 폴더(작업)의 흐름 한 줄 요약
-export type OtherFlow = { project: string; now: string | null; waiting: string | null; at: number }
+export type OtherFlow = { project: string; now: string | null; waiting: string | null; at: number; goal: string; detail: string | null; steps: Step[] }
 
 // amem recall --json 의 hit (Memory Inspector용)
 export type RecallHit = { id: string; kind: string; score: number; why: string[]; label: string }
@@ -58,6 +59,7 @@ declare module 'claude-code' {
       others: OtherFlow[]
       expanded: boolean
       seenPending: number
+      openOther: string | null
     }
   }
 }

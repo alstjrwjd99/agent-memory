@@ -220,3 +220,15 @@ def accept(store: Store, ids: list[str] | None = None) -> int:
             store.save(i)
             n += 1
     return n
+
+
+def reject(store: Store, ids: list[str]) -> int:
+    """후보 원칙 거절: 지우지 않고 invalidated로 (다시 같은 원칙이 제안되면 이력으로 남음)."""
+    n = 0
+    for i in store.items("heuristic"):
+        if i.id in ids and i.meta.get("status") == "candidate":
+            i.meta["status"] = "invalidated"
+            _history(i.meta, "사용자 거절")
+            store.save(i)
+            n += 1
+    return n

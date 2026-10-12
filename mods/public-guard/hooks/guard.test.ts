@@ -39,3 +39,9 @@ test('커밋 메시지에만 있어도 차단, 민감어 없으면 통과', asyn
   const good = await $.tool.call({ tool: 'Bash', command: 'git commit -m "레시피 반영"' })
   expect(good.deny).toBeUndefined()
 })
+
+test('같은 명령 줄의 grep 패턴은 걸리지 않음', async ($, on) => {
+  world(on, { isPrivate: false, diff: '+ok\n' })
+  const r = await $.tool.call({ tool: 'Bash', command: 'grep -rn "acmecorp|가나다" . ; git commit -m "패널 수정"' })
+  expect(r.deny).toBeUndefined()
+})

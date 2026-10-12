@@ -14,6 +14,15 @@ export function repoDirOf(command: string): string | null {
   return null
 }
 
+// 명령에서 커밋 메시지만 꺼냄 (-m "..." / -m '...' / --message=...). 명령 전체를 검사하면
+// 같은 줄의 grep 패턴 같은 무관한 인자까지 걸리므로 메시지만 본다
+export function commitMessages(command: string): string[] {
+  const out: string[] = []
+  const re = /(?:-m|--message)(?:\s+|=)("((?:[^"\\]|\\.)*)"|'([^']*)'|(\S+))/g
+  for (let m = re.exec(command); m; m = re.exec(command)) out.push(m[2] ?? m[3] ?? m[4] ?? '')
+  return out
+}
+
 // 홈(~) 펼치기
 export const expandHome = (p: string, home: string): string => (p === '~' || p.startsWith('~/') ? home + p.slice(1) : p)
 

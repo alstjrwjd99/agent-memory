@@ -31,6 +31,14 @@ def compute(store: Store) -> dict:
         "fresh_episodes": len(reflect.fresh_episodes(store)),
         "pending_proposals": sum(sum(1 for it in p["items"] if it["status"] == "pending") for p in review.proposals(store)),
         "recent_changes": changes[:5],
+        "heuristics": {
+            "active": sum(1 for i in items if i.kind == "heuristic" and i.meta.get("status") == "active"),
+            "candidates": [
+                {"id": i.id, "statement": str(i.meta.get("statement", ""))[:160], "evidence": len(i.meta.get("evidence") or []),
+                 "level": i.meta.get("level"), "parent": i.meta.get("parent")}
+                for i in items if i.kind == "heuristic" and i.meta.get("status") == "candidate"
+            ],
+        },
     }
 
 

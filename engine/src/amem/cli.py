@@ -61,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-abstract", action="store_true", help="압축 단계 생략")
     p = sub.add_parser("heuristics", help="원칙 목록 (상위 원칙 → 구체 원칙)")
     p.add_argument("--accept", nargs="*", help="후보 원칙 활성화 (id 없으면 전부)")
+    p.add_argument("--reject", nargs="+", help="후보 원칙 거절 (id 필수)")
     p = sub.add_parser("ingest", help="과거 작업 기록에서 episode 추출 (출처 어댑터)")
     p.add_argument("source", choices=["git"])
     p.add_argument("path", help="저장소 경로")
@@ -120,8 +121,13 @@ def main(argv: list[str] | None = None) -> int:
         for e in r.errors:
             print(f"  ! {e}")
         if a.cmd == "run":
-            path = reflect.run(store, llm.make(cfg.backend, cfg.model))
-            print(f"제안 생성: {path.name}" if path else "reflect: 새 episode 없음")
+            backend = llm.make(cfg.backend, cfg.model)
+            eps = [e for e in store.items("experience") if e.meta.get("status") == "active"]
+            d = heuristics.distill(store, backend, eps, "mixed")
+            if d.new:
+                heuristics.abstract(store, backend, d)
+            print(f"원칙 정리: 새 후보 {len(d.new)} · 근거 추가 {d.supported} · 일반화 {d.generalized} · 충돌 {d.conflicts}")
+            path = None
             print(health.render(health.write(store)))
         if not getattr(a, "dry_run", False):
             _commit(store, f"amem {a.cmd}: episode {len(r.episodes)}개" + (f", 제안 {path.stem}" if a.cmd == "run" and path else ""))
@@ -210,6 +216,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  ! {e}")
         _commit(store, f"amem distill: 새 원칙 {len(r.new)}, 상위 {len(r.merged)}")
     elif a.cmd == "heuristics":
+        if a.reject:
+            n = heuristics.reject(store, a.reject)
+            print(f"원칙 {n}개 거절")
+            _commit(store, f"amem heuristics reject {n}개")
         if a.accept is not None:
             n = heuristics.accept(store, a.accept or None)
             print(f"원칙 {n}개 활성화")

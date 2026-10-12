@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { expandHome, findTerms, isPublishing, locate, parseTerms, parseVisibility, repoDirOf } from './scan.ts'
+import { commitMessages, expandHome, findTerms, isPublishing, locate, parseTerms, parseVisibility, repoDirOf } from './scan.ts'
 
 test('commit/push 명령 감지', () => {
   expect(isPublishing('git add -A && git commit -q -m "x" && git push -q')).toBe(true)
@@ -30,4 +30,10 @@ test('공개 여부 해석과 위치 찾기', () => {
   expect(parseVisibility('garbage')).toBe('unknown')
   const diff = '+++ b/a.ts\n+ok\n+++ b/test/x.ts\n+const p = "acmecorp"\n'
   expect(locate(diff, 'acmecorp')).toEqual(['test/x.ts'])
+})
+
+test('커밋 메시지만 꺼냄 (같은 줄의 다른 인자는 무시)', () => {
+  expect(commitMessages('grep -E "acmecorp|가나다" . ; git commit -q -m "패널 수정\n\n본문" && git push')).toEqual(['패널 수정\n\n본문'])
+  expect(commitMessages("git commit -m 'a b' --message=c")).toEqual(['a b', 'c'])
+  expect(commitMessages('git push')).toEqual([])
 })

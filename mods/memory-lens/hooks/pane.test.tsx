@@ -1,6 +1,7 @@
 import { test, expect, mock } from 'claude-code/testing'
 
 const H = (experience: number, opinion: number, pending: number) => JSON.stringify({
+  heuristics: { active: opinion, candidates: pending ? [{ id: 'hr_1', statement: 'E2E는 운영 데이터로', evidence: 2, level: 'specific', parent: null }] : [] },
   machine: 'mac', counts: { world: 0, experience, observation: 0, opinion, procedure: 0 },
   new_today: 0, updated_today: 0, conflicts: [], pending_sessions: 0, fresh_episodes: 0, pending_proposals: pending,
   recent_changes: [{ id: 'op_1', label: '원문 단위 보존', from: null, to: 0.86, at: '2026-10-12T12:00:00+09:00' }],
@@ -35,7 +36,8 @@ test('/memory-lens: 기억 상세(personal/work 요약, 승인 버튼)가 펼쳐
     expect(await ui.find({ type: 'Text', text: /경험 25 · 판단 10/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /경험 6 · 판단 0/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /E2E는 운영 데이터로/ })).toBeDefined()
-    expect(await ui.find({ key: 'ok-work-p1-1' })).toBeDefined()
+    expect(await ui.find({ key: 'ok-work-hr_1' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /활성 원칙 10/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /NEW 원문 단위 보존 0.86/ })).toBeDefined()
     await ui.unmount()
   }
@@ -86,10 +88,17 @@ test('/flow 후 패널 맨 위에 2단 흐름 + 다른 작업 목록, 기억 영
     expect(await ui.find({ type: 'Text', text: /○ 윈도우 설치/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /⏸ 내 답 필요: 위치 고르기/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /─ 다른 작업 ─/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /billing ● 규격서 배열 수정 12분/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /apc ⏸ BO 범위 결정 3시간/ })).toBeDefined()
+    expect(await ui.find({ type: 'Button', text: /▸ billing ● 규격서 배열 수정 12분/ })).toBeDefined()
+    expect(await ui.find({ type: 'Button', text: /apc ⏸ BO 범위 결정 3시간/ })).toBeDefined()
+    // 다른 작업 줄을 누르면 그 프로젝트의 흐름 그래프가 펼쳐지고, 다시 누르면 접힘
+    expect(await ui.find({ type: 'Text', text: /목표: g/ })).toBeUndefined()
+    await ui.press({ key: 'other-billing' })
+    expect(await ui.find({ type: 'Text', text: /● 규격서 배열 수정$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /목표: g/ })).toBeDefined()
+    await ui.press({ key: 'other-billing' })
+    expect(await ui.find({ type: 'Text', text: /목표: g/ })).toBeUndefined()
     if (await ui.find({ key: 'close' })) await ui.press({ key: 'close' })
-    expect(await ui.find({ type: 'Text', text: /승인 대기/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /원칙 후보/ })).toBeUndefined()
     await ui.unmount()
   }
 })

@@ -110,7 +110,7 @@ export function otherFlows(flows: readonly Flow[], currentProject: string, limit
     .filter(f => f && f.project && f.project !== currentProject && Array.isArray(f.steps))
     .sort((a, b) => b.at - a.at)
     .slice(0, limit)
-    .map(f => ({ project: f.project, now: f.steps.find(s => s.status === 'now')?.label ?? null, waiting: f.waiting ?? null, at: f.at }))
+    .map(f => ({ project: f.project, now: f.steps.find(s => s.status === 'now')?.label ?? null, waiting: f.waiting ?? null, at: f.at, goal: f.goal, detail: f.detail ?? null, steps: f.steps }))
 }
 
 // 경과 시간: 방금 / 12분 / 3시간 / 2일
