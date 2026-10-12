@@ -26,3 +26,9 @@ REFLECTION = obj(
     # 기존 판단/절차의 문장 자체를 고침 (opinion은 statement, procedure는 rules 사용, 안 쓰는 쪽은 빈 값)
     revisions=arr(obj(id=STR, statement=STR, rules=STRS, supports=STRS, reason=STR)),
 )
+
+INT = {"type": "integer"}
+
+GIT_EPISODES = obj(
+    episodes=arr(obj(title=STR, event=STR, action=STR, result=STR, project=STR, signals=STRS, tags=STRS, units=arr(INT))),
+)

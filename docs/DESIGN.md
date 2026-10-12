@@ -96,4 +96,12 @@ amem recall "<프롬프트>" --cwd <폴더>   (memory-lens가 프롬프트마다
 2. engine: promote, reflect, review, export, health ✅ (2026-10-12, 실제 claude -p로 E2E 확인)
 3. Memory Health pane + 승인/거절 버튼 ✅ (memory-lens v0.2)
 4. recall 주입 + Memory Inspector + git 버전 관리 ✅ (memory-lens v0.3, 엔진 recall/history/sync)
-5. 다음: 의미 검색(임베딩 또는 실제 Hindsight), 윈도우 실사용 검증
+5. 출처 어댑터: git ✅ (`amem ingest git <repo> --since`), transcript / notion 예정
+6. 다음: 의미 검색(임베딩 또는 실제 Hindsight), 윈도우 실사용 검증
+
+## 출처 어댑터 (과거 기록 → episode, 냉시동 해결)
+- git: prompt 커밋 ~ 다음 prompt 커밋 = 작업 단위. 커밋 제목/본문 + 변경 파일 목록만 (diff 원문 X)
+  - 신호: correction(여전히/다시), external_feedback(피드백), fix_in_unit, outcome_recorded(→), large_unit, reworked_next(다음 단위가 같은 파일 재작업)
+  - 신호 없는 단위는 LLM 없이 처리 완료, 8단위씩 묶어 1회 호출, 처리 상태 `.amem/ingest-git-<pc>.json`
+  - store는 저장소 경로로 자동 선택 (config work_paths) → 회사 저장소는 work store로만
+- 파일럿(회사 저장소 1개, 한 달): 작업 단위 43 → 신호 24 → LLM 3회(2분 19초) → episode 25 → reflect 1회 → 판단 10(conf 0.75~0.86) + 절차 2

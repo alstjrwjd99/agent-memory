@@ -35,7 +35,8 @@ def commit(root: Path, message: str) -> str | None:
     if not is_repo(root):
         return None
     paths = [p for p in TRACKED if (root / p).exists()]
-    paths += [str(p.relative_to(root).as_posix()) for p in (root / ".amem").glob("processed-*.json")]
+    # PC별 처리 상태 파일 (processed-<pc>, ingest-*-<pc>)
+    paths += [str(p.relative_to(root).as_posix()) for pat in ("processed-*.json", "ingest-*.json") for p in (root / ".amem").glob(pat)]
     _git(root, "add", "-A", "--", *paths)
     if _git(root, "diff", "--cached", "--quiet").returncode == 0:
         return None

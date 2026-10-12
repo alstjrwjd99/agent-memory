@@ -6,7 +6,8 @@ import json
 import sys
 
 from . import config as cfgmod
-from . import export, health, llm, promote, recall, reflect, review, vcs
+from . import export, health, ingest_git, llm, promote, recall, reflect, review, vcs
+from pathlib import Path
 from .store import Store
 
 
@@ -53,6 +54,14 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("history", help="한 기억의 변경 이력 (git + 파일 내 versions)")
     p.add_argument("id")
     sub.add_parser("sync", help="store git pull --rebase + push")
+    p = sub.add_parser("ingest", help="과거 작업 기록에서 episode 추출 (출처 어댑터)")
+    p.add_argument("source", choices=["git"])
+    p.add_argument("path", help="저장소 경로")
+    p.add_argument("--project", help="프로젝트 이름 (기본: 폴더명)")
+    p.add_argument("--since")
+    p.add_argument("--until")
+    p.add_argument("--batch", type=int, default=ingest_git.BATCH)
+    p.add_argument("--dry-run", action="store_true")
 
     a = ap.parse_args(argv)
 
@@ -76,7 +85,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     cfg = cfgmod.load()
-    scope = a.store or (cfg.scope_for(a.cwd) if a.cmd == "recall" else "personal")
+    if a.store:
+        scope = a.store
+    elif a.cmd == "recall":
+        scope = cfg.scope_for(a.cwd)
+    elif a.cmd == "ingest":
+        # 저장소 위치로 store 결정: 회사 저장소가 personal로 섞이지 않게
+        scope = cfg.scope_for(str(Path(a.path).resolve()))
+    else:
+        scope = "personal"
     store = _store(cfg, scope)
     only = None
     if getattr(a, "only", None) is not None:
@@ -156,6 +173,19 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[{str(h['at'])[:16]}] conf {h['confidence']} (지지 {h['support']}, 반례 {h['counter']}) {h.get('note', '')}")
         print()
         print(vcs.history(store.root, item.path.relative_to(store.root).as_posix()))
+    elif a.cmd == "ingest":
+        repo = Path(a.path).resolve()
+        project = a.project or repo.name
+        print(f"store: {scope} ({store.root})")
+        r = ingest_git.run(store, None if a.dry_run else llm.make(cfg.backend, cfg.model), repo, project,
+                           since=a.since, until=a.until, dry_run=a.dry_run, batch=a.batch)
+        print(f"작업 단위 {r.units_total}개 · 신호 있음 {r.units_with_signal} · 이미 처리 {r.skipped_done} · LLM 호출 {r.llm_calls} · episode {len(r.episodes)}")
+        for e in r.episodes:
+            print(f"  + {e}")
+        for e in r.errors:
+            print(f"  ! {e}")
+        if not a.dry_run:
+            _commit(store, f"amem ingest git {repo.name}: episode {len(r.episodes)}개 ({a.since or '처음'}~{a.until or '현재'})")
     elif a.cmd == "sync":
         print(vcs.sync(store.root))
     return 0
