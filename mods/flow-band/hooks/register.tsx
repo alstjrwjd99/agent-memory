@@ -11,6 +11,8 @@ const turnsSince = atom({ plugin: 'flow-band', key: 'turnsSince' } as const, 0)
 const updating = atom({ plugin: 'flow-band', key: 'updating' } as const, false)
 // 도구를 안 쓴 대화 턴도 이 횟수마다 한 번은 갱신 (waiting 반영)
 const REFRESH_EVERY_TURNS = 2
+// 진단용: band가 마지막으로 그려졌는지/왜 안 그렸는지 (모듈 변수: 렌더 중엔 state 쓰기가 막혀 있음)
+let lastRender = { at: 0, result: '아직 렌더 호출 없음' }
 
 // 대화 요약 → 흐름 갱신 → 폴더별로 저장 (세션이 바뀌어도 유지)
 async function refresh($: EngineInterface, options: PluginOptions): Promise<void> {
@@ -32,6 +34,8 @@ async function refresh($: EngineInterface, options: PluginOptions): Promise<void
     if (!next) return
     await update($, flow, () => next)
     await $.store.set(storeKey(cwd), next)
+    // 처음엔 band가 '그릴 것 없음'으로 지나갔을 수 있어 명시적으로 다시 그리게 함
+    $.ui.invalidate('ui.render')
   } finally {
     await update($, toolsSince, () => 0)
     await update($, turnsSince, () => 0)
@@ -45,14 +49,18 @@ export const register: Register = (on, options) => {
     await $.command.register({ name: 'flow-toggle', description: '작업 흐름 band 보이기/숨기기' })
     // 같은 폴더의 지난 흐름을 바로 보여줌
     const saved = (await $.store.get(storeKey(await $.session.cwd()))) as Flow | undefined
-    if (saved && Array.isArray(saved.steps)) await update($, flow, () => saved)
+    if (saved && Array.isArray(saved.steps)) {
+      await update($, flow, () => saved)
+      $.ui.invalidate('ui.render')
+    }
     return next(e)
   })
 
   on('command.run', { command: 'flow' }, async $ => {
     await refresh($, options)
     const f = await read($, flow)
-    return { text: f ? `흐름 갱신: ${f.goal}` : '갱신할 대화가 아직 없어요.' }
+    const ago = lastRender.at ? `${Math.round((Date.now() - lastRender.at) / 1000)}초 전` : '-'
+    return { text: f ? `흐름 갱신: ${f.goal} (band 마지막 렌더 ${ago}: ${lastRender.result})` : '갱신할 대화가 아직 없어요.' }
   })
 
   on('command.run', { command: 'flow-toggle' }, async $ => {
@@ -81,7 +89,10 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const f = await read($, flow)
-    if (!f || e.props.hasSurvey || (await read($, hidden)) || e.props.maxRows < 1) return next(e)
+    const isHidden = await read($, hidden)
+    const skip = !f ? '흐름 없음' : e.props.hasSurvey ? '설문 표시 중' : isHidden ? '숨김(/flow-toggle)' : e.props.maxRows < 1 ? `공간 없음(maxRows ${e.props.maxRows})` : ''
+    lastRender = { at: Date.now(), result: skip ? `안 그림: ${skip}` : `그림 (${e.props.maxRows}줄 x ${e.props.bodyColumns}칸)` }
+    if (skip || !f) return next(e)
     const { Box, Text } = $.ui.resolve(e)
     const width = Math.max(20, e.props.bodyColumns - 2)
     const isUpdating = await read($, updating)
