@@ -1,1 +1,12 @@
-{ "name": "memory-lens", "version": "0.1.0", "description": "에이전트 기억(Working/Episodic/Semantic/Procedural) 현황 pane + 저장 순간 toast", "types": "./types/index.d.ts" }
+{
+  "name": "memory-lens",
+  "version": "0.2.0",
+  "description": "agent-memory Memory Health pane: 기억 현황, 판단 변화, 승인 대기 제안을 보여주고 버튼으로 승인/거절",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "machine": { "type": "string", "title": "PC 이름", "description": "amem config의 machine과 같게 (예: mac, win-work)", "default": "mac" },
+    "store": { "type": "string", "title": "store 경로", "description": "보여줄 기억 저장소 절대경로 (비우면 ~/workspace/memory-personal)", "default": "" },
+    "scope": { "type": "string", "title": "store 종류", "description": "amem --store 값", "options": ["personal", "work"], "default": "personal" },
+    "engineDir": { "type": "string", "title": "엔진 경로", "description": "agent-memory/engine 절대경로 (비우면 ~/workspace/agent-memory/engine)", "default": "" }
+  }
+}
