@@ -6,7 +6,7 @@ import json
 import sys
 
 from . import config as cfgmod
-from . import export, health, ingest_git, llm, promote, recall, reflect, review, vcs
+from . import export, health, heuristics, ingest_git, llm, promote, recall, reflect, review, vcs
 from pathlib import Path
 from .store import Store
 
@@ -55,6 +55,12 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("history", help="한 기억의 변경 이력 (git + 파일 내 versions)")
     p.add_argument("id")
     sub.add_parser("sync", help="store git pull --rebase + push")
+    p = sub.add_parser("distill", help="경험 → 작은 판단 원칙 (기존 원칙에 먼저 합치고, 마지막에 상위 원칙으로 압축)")
+    p.add_argument("--project", help="이 프로젝트 경험만 (기본: 전부)")
+    p.add_argument("--batch", type=int, default=heuristics.BATCH)
+    p.add_argument("--no-abstract", action="store_true", help="압축 단계 생략")
+    p = sub.add_parser("heuristics", help="원칙 목록 (상위 원칙 → 구체 원칙)")
+    p.add_argument("--accept", nargs="*", help="후보 원칙 활성화 (id 없으면 전부)")
     p = sub.add_parser("ingest", help="과거 작업 기록에서 episode 추출 (출처 어댑터)")
     p.add_argument("source", choices=["git"])
     p.add_argument("path", help="저장소 경로")
@@ -190,6 +196,33 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  ! {e}")
         if not a.dry_run:
             _commit(store, f"amem ingest git {repo.name}: episode {len(r.episodes)}개 ({a.since or '처음'}~{a.until or '현재'})")
+    elif a.cmd == "distill":
+        eps = [e for e in store.items("experience") if e.meta.get("status") == "active"
+               and (not a.project or e.meta.get("project") == a.project)]
+        backend = llm.make(cfg.backend, cfg.model)
+        r = heuristics.distill(store, backend, eps, a.project or "mixed", batch=a.batch)
+        if not a.no_abstract:
+            heuristics.abstract(store, backend, r)
+        roots = heuristics.tree(store)
+        print(f"경험 {r.episodes}개 → LLM {r.llm_calls}회 · 새 원칙 {len(r.new)} · 근거 추가 {r.supported} · 일반화 {r.generalized} · 충돌 {r.conflicts} · 상위로 묶음 {len(r.merged)}")
+        print(f"최상위 원칙 {len(roots)}개 (전체 {sum(1 + len(k) for _, k in roots)}개)")
+        for e in r.errors:
+            print(f"  ! {e}")
+        _commit(store, f"amem distill: 새 원칙 {len(r.new)}, 상위 {len(r.merged)}")
+    elif a.cmd == "heuristics":
+        if a.accept is not None:
+            n = heuristics.accept(store, a.accept or None)
+            print(f"원칙 {n}개 활성화")
+            _commit(store, f"amem heuristics accept {n}개")
+        for root, kids in heuristics.tree(store):
+            m = root.meta
+            tag = "" if m.get("status") == "active" else " (후보)"
+            print(f"■ {root.id} [{m.get('level')}/{m.get('scope')}] 근거 {len(m.get('evidence') or [])} · 반례 {len(m.get('counter_evidence') or [])}{tag}")
+            print(f"  {m.get('statement')}")
+            print(f"  언제: {m.get('when')}" + (f"\n  예외: {m['unless']}" if m.get("unless") else ""))
+            print(f"  왜: {m.get('why')}")
+            for k in kids:
+                print(f"    └ {k.id} (근거 {len(k.meta.get('evidence') or [])}) {k.meta.get('statement')}")
     elif a.cmd == "sync":
         print(vcs.sync(store.root))
     return 0

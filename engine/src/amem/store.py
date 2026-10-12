@@ -16,8 +16,10 @@ KINDS: dict[str, tuple[str, str]] = {
     "observation": ("observations", "ob"),
     "opinion": ("opinions", "op"),
     "procedure": ("procedures", "pr"),
+    # 경험에서 형성된 작은 판단 원칙 (판단은 저장하지 않고 상황마다 원칙을 조합)
+    "heuristic": ("heuristics", "hr"),
 }
-STATUSES = ("active", "superseded", "invalidated", "low_confidence")
+STATUSES = ("active", "candidate", "superseded", "invalidated", "low_confidence")
 _FM = re.compile(r"^---\r?\n(.*?)\r?\n---\r?\n?(.*)$", re.S)
 
 

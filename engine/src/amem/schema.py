@@ -32,3 +32,16 @@ INT = {"type": "integer"}
 GIT_EPISODES = obj(
     episodes=arr(obj(title=STR, event=STR, action=STR, result=STR, project=STR, signals=STRS, tags=STRS, units=arr(INT))),
 )
+
+# 원칙 정리(distill): 새 경험을 기존 원칙에 먼저 합치고, 정말 새로운 것만 추가
+DISTILL = obj(
+    supports=arr(obj(id=STR, episodes=STRS, reason=STR)),
+    generalizations=arr(obj(id=STR, statement=STR, when=STR, unless=STR, why=STR, episodes=STRS, reason=STR)),
+    conflicts=arr(obj(id=STR, episode=STR, kind=STR, unless_add=STR, reason=STR)),
+    new=arr(obj(statement=STR, when=STR, unless=STR, why=STR, scope=STR, level=STR, episodes=STRS)),
+)
+
+# 압축(abstract): 비슷한 구체 원칙들을 상위 일반 원칙으로 묶음
+ABSTRACT = obj(
+    merges=arr(obj(children=STRS, statement=STR, when=STR, unless=STR, why=STR, reason=STR)),
+)
