@@ -12,6 +12,12 @@ claude plugin install env-guard@agent-memory
 ```
 로컬 폴더 marketplace라 `git pull` 후 세션에서 `/reload-plugins`만 하면 반영됨.
 
+## 기억 store (private)
+```
+git clone https://github.com/alstjrwjd99/memory-personal.git ~/workspace/memory-personal
+```
+작업 전후로 `uv run amem sync` (pull --rebase + push). events/는 PC 로컬에만 남음.
+
 ## 엔진 (amem)
 ```
 cd engine
