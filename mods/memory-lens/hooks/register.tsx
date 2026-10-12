@@ -1,76 +1,69 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 
-import type { Health, LastRecall, PendingItem, RecallHit } from '../types'
-import { changeLine, classifyPath, clip, pendingItems, resolvePaths, shouldRecall } from './parse.ts'
+import type { Health, LastRecall, PendingItem, RecallHit, Scope, StoreHealth } from '../types'
+import { changeLine, classifyPath, clip, countsLine, pendingItems, resolvePaths, shouldRecall } from './parse.ts'
 
 const PANE = 'memory-lens'
 const TITLE = '🧠 Memory'
-const health = atom({ plugin: 'memory-lens', key: 'health' } as const, null as Health | null)
+const stores = atom({ plugin: 'memory-lens', key: 'stores' } as const, [] as StoreHealth[])
 const pending = atom({ plugin: 'memory-lens', key: 'pending' } as const, [] as PendingItem[])
 const busy = atom({ plugin: 'memory-lens', key: 'busy' } as const, null as string | null)
 const message = atom({ plugin: 'memory-lens', key: 'message' } as const, null as string | null)
 const saved = atom({ plugin: 'memory-lens', key: 'saved' } as const, [] as { at: number; name: string }[])
 const turns = atom({ plugin: 'memory-lens', key: 'turns' } as const, 0)
 const lastRecall = atom({ plugin: 'memory-lens', key: 'recall' } as const, null as LastRecall | null)
+const loadedAt = atom({ plugin: 'memory-lens', key: 'loadedAt' } as const, 0)
 const KIND_LABEL: Record<string, string> = { opinion: '판단', procedure: '절차', observation: '관찰', experience: '경험', world: '사실' }
+const RELOAD_EVERY_MS = 30_000
 
-// 엔진 recall 호출 (LLM 없음). 실패하면 null → 프롬프트는 그대로 진행
-async function runRecall($: EngineInterface, options: PluginOptions, query: string): Promise<{ context: string; scope: string; hits: RecallHit[] } | null> {
-  const { engineDir } = await paths($, options)
-  const cwd = await $.session.cwd()
-  // 매 프롬프트마다 uv가 프로젝트를 다시 확인하지 않게 venv의 amem을 직접 실행 (없으면 uv run)
-  const direct = [`${engineDir}/.venv/bin/amem`, `${engineDir}/.venv/Scripts/amem.exe`]
-  let exe: string[] = ['uv', 'run', '--project', engineDir, 'amem']
-  for (const candidate of direct) {
-    if (await $.fs.exists(candidate)) {
-      exe = [candidate]
-      break
-    }
-  }
-  const r = await $.process.run([...exe, 'recall', query, '--cwd', cwd, '--json'], { timeoutMs: 5_000 })
-  if (r.exitCode !== 0) return null
-  return JSON.parse(r.stdout) as { context: string; scope: string; hits: RecallHit[] }
-}
-
-async function paths($: EngineInterface, options: PluginOptions): Promise<{ store: string; engineDir: string }> {
+async function paths($: EngineInterface, options: PluginOptions) {
   const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE')) ?? ''
-  return resolvePaths(home, String(options.store ?? ''), String(options.engineDir ?? ''))
+  return resolvePaths(home, String(options.store ?? ''), String(options.engineDir ?? ''), String(options.workStore ?? ''))
 }
 
-// health JSON + 승인 대기 제안을 파일에서 다시 읽는다 (LLM/엔진 실행 없음)
+// personal/work store의 health + 승인 대기 제안을 파일에서 다시 읽는다 (엔진 실행 없음)
 async function reload($: EngineInterface, options: PluginOptions): Promise<void> {
-  const { store } = await paths($, options)
+  const p = await paths($, options)
   const machine = String(options.machine || 'mac')
-  const hp = `${store}/.amem/health-${machine}.json`
-  const h = (await $.fs.exists(hp)) ? (JSON.parse(String(await $.fs.read(hp))) as Health) : null
-  const dir = `${store}/proposals`
-  const files: string[] = []
-  if (await $.fs.exists(dir)) {
+  const found: StoreHealth[] = []
+  const items: PendingItem[] = []
+  for (const [scope, root] of [['personal', p.store], ['work', p.workStore]] as [Scope, string][]) {
+    if (!(await $.fs.exists(root))) continue
+    const hp = `${root}/.amem/health-${machine}.json`
+    const health = (await $.fs.exists(hp)) ? (JSON.parse(String(await $.fs.read(hp))) as Health) : null
+    found.push({ scope, health })
+    const dir = `${root}/proposals`
+    if (!(await $.fs.exists(dir))) continue
+    const files: string[] = []
     for (const f of await $.fs.list(dir)) {
       if (f.kind === 'file' && f.name.endsWith('.json')) files.push(String(await $.fs.read(`${dir}/${f.name}`)))
     }
+    items.push(...pendingItems(files, scope))
   }
-  await update($, health, () => h)
-  await update($, pending, () => pendingItems(files))
+  await update($, stores, () => found)
+  await update($, pending, () => items)
+  await update($, loadedAt, () => Date.now())
+}
+
+// 엔진 실행 경로: venv의 amem이 있으면 직접, 없으면 uv run
+async function amemArgv($: EngineInterface, engineDir: string): Promise<string[]> {
+  for (const candidate of [`${engineDir}/.venv/bin/amem`, `${engineDir}/.venv/Scripts/amem.exe`]) {
+    if (await $.fs.exists(candidate)) return [candidate]
+  }
+  return ['uv', 'run', '--project', engineDir, 'amem']
 }
 
 // amem CLI 실행 후 새로 읽기. 실행 중엔 버튼을 잠근다
-async function amem($: EngineInterface, options: PluginOptions, label: string, args: string[]): Promise<void> {
+async function amem($: EngineInterface, options: PluginOptions, label: string, scope: Scope, args: string[]): Promise<void> {
   if (await read($, busy)) return
   await update($, busy, () => label)
   try {
     const { engineDir } = await paths($, options)
-    const scope = String(options.scope || 'personal')
-    const r = await $.process.run(['uv', 'run', '--project', engineDir, 'amem', '--store', scope, ...args], {
-      timeoutMs: 600_000,
-      env: { AMEM_INTERNAL: '1' },
-    })
+    const exe = await amemArgv($, engineDir)
+    const r = await $.process.run([...exe, '--store', scope, ...args], { timeoutMs: 600_000 })
     const last = (r.exitCode === 0 ? r.stdout : r.stderr).trim().split('\n').pop() ?? ''
     await update($, message, () => `${r.exitCode === 0 ? '✓' : '✗'} ${label}: ${clip(last, 60)}`)
-    if (args[0] !== 'health') {
-      await $.process.run(['uv', 'run', '--project', engineDir, 'amem', '--store', scope, 'health'], { timeoutMs: 60_000 })
-    }
   } catch (err) {
     await update($, message, () => `✗ ${label}: ${String(err).slice(0, 60)}`)
   } finally {
@@ -79,11 +72,23 @@ async function amem($: EngineInterface, options: PluginOptions, label: string, a
   }
 }
 
+// 엔진 recall 호출 (LLM 없음). 실패하면 null → 프롬프트는 그대로 진행
+async function runRecall($: EngineInterface, options: PluginOptions, query: string): Promise<{ context: string; scope: string; hits: RecallHit[] } | null> {
+  const { engineDir } = await paths($, options)
+  const cwd = await $.session.cwd()
+  const exe = await amemArgv($, engineDir)
+  const r = await $.process.run([...exe, 'recall', query, '--cwd', cwd, '--json'], { timeoutMs: 5_000 })
+  if (r.exitCode !== 0) return null
+  return JSON.parse(r.stdout) as { context: string; scope: string; hits: RecallHit[] }
+}
+
 export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'memory-lens', description: '기억 현황 pane 열기' })
     void reload($, options)
     void $.ui.open({ id: PANE, title: TITLE })
+    // 터미널에서 직접 amem을 돌려도 pane이 따라오도록 주기적으로 파일을 다시 읽음
+    $.clock.every(RELOAD_EVERY_MS, () => void reload($, options))
     return next(e)
   })
 
@@ -133,31 +138,36 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
-    const h = await read($, health)
+    const all = await read($, stores)
     const items = await read($, pending)
     const working = await read($, busy)
     const msg = await read($, message)
     const turnCount = await read($, turns)
     const rc = await read($, lastRecall)
+    const at = await read($, loadedAt)
     const width = Math.max(24, (e.viewport?.columns ?? 44) - 14)
-    const c = h?.counts
+    const changes = all
+      .flatMap(s => (s.health?.recent_changes ?? []).map(c => ({ ...c, scope: s.scope })))
+      .sort((a, b) => (a.at < b.at ? 1 : -1))
+      .slice(0, 5)
 
     return (
       <Box flexDirection="column">
-        <Text bold>Memory Health {h ? `(${h.machine})` : ''}</Text>
-        {!h && <Text dimColor>health 없음: [새로고침]을 눌러주세요</Text>}
-        {c && <Text>World {c.world} · Experience {c.experience}</Text>}
-        {c && <Text>Observation {c.observation} · Opinion {c.opinion} · Procedure {c.procedure}</Text>}
-        {h && <Text>오늘 +{h.new_today} · 갱신 {h.updated_today} · 충돌 {h.conflicts.length}</Text>}
-        {h && (
-          <Text dimColor>
-            대기: 세션 {h.pending_sessions} · episode {h.fresh_episodes} · 이번 세션 {turnCount}턴
-          </Text>
-        )}
+        <Text bold>Memory Health</Text>
+        {all.length === 0 && <Text dimColor>store 없음: 설정의 store 경로 확인</Text>}
+        {all.map(s => (
+          <Box key={`st-${s.scope}`} flexDirection="column">
+            <Text>
+              <Text bold>{s.scope}</Text>
+              {s.health ? `  대기 ${s.health.pending_proposals} · 충돌 ${s.health.conflicts.length}` : '  (health 없음)'}
+            </Text>
+            {s.health && <Text dimColor>  {countsLine(s.health.counts)}</Text>}
+          </Box>
+        ))}
 
-        {h && h.recent_changes.length > 0 && <Text bold>─ Recent Reflection ─</Text>}
-        {h?.recent_changes.map(ch => (
-          <Text key={`ch-${ch.id}`}>{changeLine(ch, width - 12)}</Text>
+        {changes.length > 0 && <Text bold>─ Recent Reflection ─</Text>}
+        {changes.map(ch => (
+          <Text key={`ch-${ch.scope}-${ch.id}`}>{changeLine(ch, width - 12)}</Text>
         ))}
 
         <Text bold>─ 이번에 꺼낸 기억 {rc ? `(${rc.scope})` : ''} ─</Text>
@@ -175,24 +185,30 @@ export const register: Register = (on, options) => {
         <Text bold>─ 승인 대기 {items.length} ─</Text>
         {items.length === 0 && <Text dimColor>없음</Text>}
         {items.slice(0, 6).map(it => (
-          <Box key={`it-${it.pid}-${it.n}`} flexDirection="column">
-            <Text>{clip(it.text, width)}</Text>
+          <Box key={`it-${it.scope}-${it.pid}-${it.n}`} flexDirection="column">
+            <Text>
+              <Text dimColor>{it.scope === 'work' ? 'W ' : 'P '}</Text>
+              {clip(it.text, width - 2)}
+            </Text>
             <Box flexDirection="row">
-              <Button key={`ok-${it.pid}-${it.n}`} label="승인" onPress={() => amem($, options, `#${it.n} 승인`, ['apply', it.pid, '--only', String(it.n)])} />
+              <Button key={`ok-${it.scope}-${it.pid}-${it.n}`} label="승인" onPress={() => amem($, options, `#${it.n} 승인`, it.scope, ['apply', it.pid, '--only', String(it.n)])} />
               <Text> </Text>
-              <Button key={`no-${it.pid}-${it.n}`} label="거절" onPress={() => amem($, options, `#${it.n} 거절`, ['reject', it.pid, '--only', String(it.n)])} />
+              <Button key={`no-${it.scope}-${it.pid}-${it.n}`} label="거절" onPress={() => amem($, options, `#${it.n} 거절`, it.scope, ['reject', it.pid, '--only', String(it.n)])} />
             </Box>
           </Box>
         ))}
         {items.length > 6 && <Text dimColor>…외 {items.length - 6}개 (amem review)</Text>}
 
         <Box flexDirection="row">
-          <Button key="refresh" label="새로고침" onPress={() => amem($, options, '새로고침', ['health'])} />
+          <Button key="refresh" label="새로고침" onPress={() => reload($, options)} />
           <Text> </Text>
-          <Button key="run" label="기억 정리(LLM)" onPress={() => amem($, options, '기억 정리', ['run'])} />
+          <Button key="run" label="기억 정리(LLM)" onPress={() => amem($, options, '기억 정리', 'personal', ['run'])} />
         </Box>
         {working && <Text color="yellow">⏳ {working} 실행 중…</Text>}
         {!working && msg && <Text dimColor>{msg}</Text>}
+        <Text dimColor>
+          이번 세션 {turnCount}턴 · 갱신 {at ? new Date(at).toTimeString().slice(0, 8) : '-'}
+        </Text>
       </Box>
     )
   })

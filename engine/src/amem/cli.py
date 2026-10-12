@@ -192,6 +192,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _commit(store: Store, message: str) -> None:
+    # 변경 후 health도 항상 갱신 (pane이 읽는 파일, git에는 안 들어감)
+    health.write(store)
     try:
         h = vcs.commit(store.root, message)
     except vcs.CommitError as e:

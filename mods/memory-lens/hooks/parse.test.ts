@@ -10,8 +10,8 @@ test('기억/스킬 경로 판정 (맥/윈도우)', () => {
 })
 
 test('기본 경로는 홈 기준, 설정값이 있으면 그대로', () => {
-  expect(resolvePaths('C:\\Users\\j', '', '')).toEqual({ store: 'C:/Users/j/workspace/memory-personal', engineDir: 'C:/Users/j/workspace/agent-memory/engine' })
-  expect(resolvePaths('/Users/a', 'D:\\mem\\work\\', '/e')).toEqual({ store: 'D:/mem/work', engineDir: '/e' })
+  expect(resolvePaths('C:\\Users\\j', '', '')).toEqual({ store: 'C:/Users/j/workspace/memory-personal', workStore: 'C:/Users/j/workspace/memory-work', engineDir: 'C:/Users/j/workspace/agent-memory/engine' })
+  expect(resolvePaths('/Users/a', 'D:\\mem\\p\\', '/e', 'D:\\mem\\work')).toEqual({ store: 'D:/mem/p', workStore: 'D:/mem/work', engineDir: '/e' })
 })
 
 test('승인 대기 항목만, 깨진 파일은 무시', () => {
@@ -24,9 +24,9 @@ test('승인 대기 항목만, 깨진 파일은 무시', () => {
     ],
   })
   const done = JSON.stringify({ id: 'p0', status: 'done', items: [] })
-  expect(pendingItems([p, done, '{broken'])).toEqual([
-    { pid: 'p1', n: 1, text: '[판단 0.75] S' },
-    { pid: 'p1', n: 3, text: '[절차] T' },
+  expect(pendingItems([p, done, '{broken'], 'work')).toEqual([
+    { scope: 'work', pid: 'p1', n: 1, text: '[판단 0.75] S' },
+    { scope: 'work', pid: 'p1', n: 3, text: '[절차] T' },
   ])
   expect(describe({ n: 1, op: 'evidence', status: 'pending', id: 'op_1', supports: ['a'], contradicts: [] })).toBe('[근거] op_1 +1 / 반례 +0')
 })

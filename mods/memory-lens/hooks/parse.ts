@@ -15,10 +15,11 @@ export function classifyPath(raw: string): { kind: 'memory' | 'skill'; name: str
 }
 
 // 설정이 비어 있으면 홈 기준 기본 경로
-export function resolvePaths(home: string, store: string, engineDir: string): { store: string; engineDir: string } {
+export function resolvePaths(home: string, store: string, engineDir: string, workStore = ''): { store: string; workStore: string; engineDir: string } {
   const h = norm(home)
   return {
     store: store ? norm(store) : `${h}/workspace/memory-personal`,
+    workStore: workStore ? norm(workStore) : `${h}/workspace/memory-work`,
     engineDir: engineDir ? norm(engineDir) : `${h}/workspace/agent-memory/engine`,
   }
 }
@@ -50,13 +51,13 @@ export function describe(it: ProposalItem): string {
 }
 
 // proposals/*.json 텍스트들 → 승인 대기 항목
-export function pendingItems(files: readonly string[]): { pid: string; n: number; text: string }[] {
-  const out: { pid: string; n: number; text: string }[] = []
+export function pendingItems<S extends string>(files: readonly string[], scope: S): { scope: S; pid: string; n: number; text: string }[] {
+  const out: { scope: S; pid: string; n: number; text: string }[] = []
   for (const text of files) {
     try {
       const p = JSON.parse(text) as { id: string; status: string; items: ProposalItem[] }
       if (p.status !== 'pending') continue
-      for (const it of p.items) if (it.status === 'pending') out.push({ pid: p.id, n: it.n, text: describe(it) })
+      for (const it of p.items) if (it.status === 'pending') out.push({ scope, pid: p.id, n: it.n, text: describe(it) })
     } catch {
       // 동기화 중 깨진 파일은 건너뜀
     }
@@ -78,4 +79,9 @@ export function changeLine(c: { label: string; from: number | null; to: number }
   if (c.from === null) return `NEW ${label} ${c.to.toFixed(2)}`
   const arrow = c.to > c.from ? '↑' : c.to < c.from ? '↓' : '='
   return `${arrow} ${label} ${c.from.toFixed(2)}→${c.to.toFixed(2)}`
+}
+
+// 한 줄 요약: E25 Op10 Pr2 Ob2 W0
+export function countsLine(c: Record<string, number>): string {
+  return `경험 ${c.experience ?? 0} · 판단 ${c.opinion ?? 0} · 절차 ${c.procedure ?? 0} · 관찰 ${c.observation ?? 0}`
 }

@@ -1,6 +1,6 @@
 {
   "name": "memory-lens",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "agent-memory: 프롬프트마다 관련 기억 recall + Memory Health pane(승인/거절 버튼, 이번에 꺼낸 기억)",
   "types": "./types/index.d.ts",
   "userConfig": {
@@ -12,19 +12,15 @@
     },
     "store": {
       "type": "string",
-      "title": "store 경로",
-      "description": "보여줄 기억 저장소 절대경로 (비우면 ~/workspace/memory-personal)",
+      "title": "personal store 경로",
+      "description": "비우면 ~/workspace/memory-personal",
       "default": ""
     },
-    "scope": {
+    "workStore": {
       "type": "string",
-      "title": "store 종류",
-      "description": "amem --store 값",
-      "options": [
-        "personal",
-        "work"
-      ],
-      "default": "personal"
+      "title": "work store 경로",
+      "description": "비우면 ~/workspace/memory-work (없으면 표시 안 함)",
+      "default": ""
     },
     "engineDir": {
       "type": "string",
