@@ -33,6 +33,9 @@ export type Flow = {
   at: number
 }
 
+// 다른 폴더(작업)의 흐름 한 줄 요약
+export type OtherFlow = { project: string; now: string | null; waiting: string | null; at: number }
+
 // amem recall --json 의 hit (Memory Inspector용)
 export type RecallHit = { id: string; kind: string; score: number; why: string[]; label: string }
 export type LastRecall = { at: number; query: string; scope: string; hits: RecallHit[] }
@@ -52,6 +55,9 @@ declare module 'claude-code' {
       flowUpdating: boolean
       toolsSince: number
       turnsSinceFlow: number
+      others: OtherFlow[]
+      expanded: boolean
+      seenPending: number
     }
   }
 }

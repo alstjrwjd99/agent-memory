@@ -1,5 +1,5 @@
 // 흐름 요약 파싱/표시 유틸 (순수 함수, 테스트 대상)
-import type { Flow, Step } from '../types'
+import type { Flow, OtherFlow, Step } from '../types'
 
 export const STATUSES = new Set(['done', 'now', 'next'])
 
@@ -102,4 +102,22 @@ export function verticalSteps(steps: readonly Step[], keepDone = 3): FlowRow[] {
     out.push({ kind: 'step', ...s })
   })
   return out
+}
+
+// 다른 폴더들의 흐름 → 최근 순 한 줄 요약 (지금 폴더 제외)
+export function otherFlows(flows: readonly Flow[], currentProject: string, limit = 4): OtherFlow[] {
+  return flows
+    .filter(f => f && f.project && f.project !== currentProject && Array.isArray(f.steps))
+    .sort((a, b) => b.at - a.at)
+    .slice(0, limit)
+    .map(f => ({ project: f.project, now: f.steps.find(s => s.status === 'now')?.label ?? null, waiting: f.waiting ?? null, at: f.at }))
+}
+
+// 경과 시간: 방금 / 12분 / 3시간 / 2일
+export function ago(at: number, now: number): string {
+  const m = Math.max(0, Math.round((now - at) / 60_000))
+  if (m < 1) return '방금'
+  if (m < 60) return `${m}분`
+  if (m < 60 * 24) return `${Math.round(m / 60)}시간`
+  return `${Math.round(m / 1440)}일`
 }

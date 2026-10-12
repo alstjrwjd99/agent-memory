@@ -1,7 +1,7 @@
 {
   "name": "memory-lens",
-  "version": "0.5.0",
-  "description": "agent-memory: 작업 흐름(2단) + Memory Health + 승인 대기 + 프롬프트마다 recall을 오른쪽 패널 하나에",
+  "version": "0.6.0",
+  "description": "agent-memory 패널: 작업 흐름이 주인공(+ 다른 작업들), 기억은 쓰일 때/새로 생길 때만 표시, recall 주입",
   "types": "./types/index.d.ts",
   "userConfig": {
     "machine": {

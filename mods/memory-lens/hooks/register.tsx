@@ -1,12 +1,12 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 
-import type { Flow, Health, LastRecall, PendingItem, RecallHit, Scope, StoreHealth } from '../types'
-import { buildPrompt, parseFlow, projectOf, storeKey, transcriptDigest, verticalSteps } from './flow.ts'
+import type { Flow, Health, LastRecall, OtherFlow, PendingItem, RecallHit, Scope, StoreHealth } from '../types'
+import { ago, buildPrompt, otherFlows, parseFlow, projectOf, storeKey, transcriptDigest, verticalSteps } from './flow.ts'
 import { changeLine, classifyPath, clip, countsLine, pendingItems, resolvePaths, shouldRecall } from './parse.ts'
 
 const PANE = 'memory-lens'
-const TITLE = '🧠 Memory'
+const TITLE = '🧭 작업 흐름'
 const stores = atom({ plugin: 'memory-lens', key: 'stores' } as const, [] as StoreHealth[])
 const pending = atom({ plugin: 'memory-lens', key: 'pending' } as const, [] as PendingItem[])
 const busy = atom({ plugin: 'memory-lens', key: 'busy' } as const, null as string | null)
@@ -24,6 +24,22 @@ const turnsSinceFlow = atom({ plugin: 'memory-lens', key: 'turnsSinceFlow' } as 
 // 도구를 안 쓴 대화 턴도 이 횟수마다 한 번은 흐름 갱신 (내 답 필요 반영)
 const FLOW_EVERY_TURNS = 2
 const MARK = { done: '✓', now: '●', next: '○' } as const
+const others = atom({ plugin: 'memory-lens', key: 'others' } as const, [] as OtherFlow[])
+// 기억 상세(Health, 승인 버튼) 펼침 여부, 마지막으로 확인한 승인 대기 수 (새로 생겼을 때만 알림)
+const expanded = atom({ plugin: 'memory-lens', key: 'expanded' } as const, false)
+const seenPending = atom({ plugin: 'memory-lens', key: 'seenPending' } as const, 0)
+
+// 다른 폴더(작업)들의 흐름: 같은 PC의 다른 세션이 저장한 것도 포함
+async function loadOthers($: EngineInterface): Promise<void> {
+  const cwd = await $.session.cwd()
+  const flows: Flow[] = []
+  for (const key of await $.store.keys()) {
+    if (!key.startsWith('flow:') || key === storeKey(cwd)) continue
+    const f = (await $.store.get(key)) as Flow | undefined
+    if (f) flows.push(f)
+  }
+  await update($, others, () => otherFlows(flows, projectOf(cwd)))
+}
 
 // 대화 요약 → 흐름 갱신 → 폴더별 저장 (세션이 바뀌어도 유지). haiku로 최근 40개 메시지만
 async function refreshFlow($: EngineInterface, options: PluginOptions): Promise<void> {
@@ -79,6 +95,7 @@ async function reload($: EngineInterface, options: PluginOptions): Promise<void>
   await update($, stores, () => found)
   await update($, pending, () => items)
   await update($, loadedAt, () => Date.now())
+  await loadOthers($).catch(() => {})
 }
 
 // 엔진 실행 경로: venv의 amem이 있으면 직접, 없으면 uv run
@@ -133,6 +150,7 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'memory-lens' }, async $ => {
     await reload($, options)
+    await update($, expanded, () => true)
     const { isPlaced } = await $.ui.open({ id: PANE, title: TITLE })
     return { text: isPlaced ? '기억 현황 pane을 열었어요.' : '터미널 폭이 좁아 pane을 못 띄웠어요. 창을 넓혀주세요.' }
   })
@@ -199,24 +217,32 @@ export const register: Register = (on, options) => {
     const items = await read($, pending)
     const working = await read($, busy)
     const msg = await read($, message)
-    const turnCount = await read($, turns)
     const rc = await read($, lastRecall)
-    const at = await read($, loadedAt)
     const f = await read($, flow)
     const fUpdating = await read($, flowUpdating)
-    const width = Math.max(24, (e.viewport?.columns ?? 44) - 14)
+    const rest = await read($, others)
+    const isOpen = await read($, expanded)
+    const seen = await read($, seenPending)
+    const width = Math.max(24, (e.viewport?.columns ?? 44) - 6)
+    const now = Date.now()
+    const recallHits = rc && rc.hits.length > 0 ? rc.hits : []
+    const newPending = Math.max(0, items.length - seen)
+    // 기억 영역은 쓰였거나(recall) 새 제안이 생겼거나 직접 펼쳤을 때만
+    const showMemory = isOpen || recallHits.length > 0 || newPending > 0
     const changes = all
-      .flatMap(s => (s.health?.recent_changes ?? []).map(c => ({ ...c, scope: s.scope })))
-      .sort((a, b) => (a.at < b.at ? 1 : -1))
-      .slice(0, 5)
+      .flatMap(st => (st.health?.recent_changes ?? []).map(c => ({ ...c, scope: st.scope })))
+      .sort((x, y) => (x.at < y.at ? 1 : -1))
+      .slice(0, 3)
 
     return (
       <Box flexDirection="column">
+        {/* ── 주인공: 지금 작업 흐름 ── */}
+        {!f && <Text dimColor>흐름 없음: 대화가 쌓이면 자동으로 정리돼요 (/flow)</Text>}
         {f && (
           <Box key="flow" flexDirection="column">
             <Text>
               <Text bold>📍 {f.project}</Text>
-              <Text dimColor>{fUpdating ? ' · 갱신 중…' : ''}</Text>
+              <Text dimColor>{fUpdating ? ' · 갱신 중…' : ` · ${ago(f.at, now)} 전 갱신`}</Text>
             </Text>
             {f.goal && <Text dimColor>목표: {clip(f.goal, width)}</Text>}
             {verticalSteps(f.steps).map((row, i, rows) =>
@@ -233,65 +259,75 @@ export const register: Register = (on, options) => {
               ),
             )}
             {f.waiting && !working && <Text color="yellow">⏸ 내 답 필요: {clip(f.waiting, width - 10)}</Text>}
-            <Text dimColor>{'─'.repeat(Math.min(width, 40))}</Text>
           </Box>
         )}
-        <Text bold>Memory Health</Text>
-        {all.length === 0 && <Text dimColor>store 없음: 설정의 store 경로 확인</Text>}
-        {all.map(s => (
-          <Box key={`st-${s.scope}`} flexDirection="column">
-            <Text>
-              <Text bold>{s.scope}</Text>
-              {s.health ? `  대기 ${s.health.pending_proposals} · 충돌 ${s.health.conflicts.length}` : '  (health 없음)'}
-            </Text>
-            {s.health && <Text dimColor>  {countsLine(s.health.counts)}</Text>}
+
+        {/* ── 다른 작업: 여러 일을 오갈 때 돌아갈 곳 ── */}
+        {rest.length > 0 && <Text bold>─ 다른 작업 ─</Text>}
+        {rest.map(o => (
+          <Text key={`other-${o.project}`}>
+            <Text bold>{clip(o.project, 16)}</Text>
+            {o.waiting ? <Text color="yellow"> ⏸ {clip(o.waiting, width - 22)}</Text> : <Text> ● {clip(o.now ?? '-', width - 22)}</Text>}
+            <Text dimColor> {ago(o.at, now)}</Text>
+          </Text>
+        ))}
+
+        {/* ── 조연: 기억 (쓰일 때/새로 생길 때만) ── */}
+        {showMemory && <Text dimColor>{'─'.repeat(Math.min(width, 36))}</Text>}
+        {recallHits.length > 0 && (
+          <Box key="recall" flexDirection="column">
+            <Text bold>🧠 방금 꺼낸 기억</Text>
+            {recallHits.slice(0, 3).map(h => (
+              <Text key={`rc-${h.id}`}>
+                <Text dimColor> {KIND_LABEL[h.kind] ?? h.kind} </Text>
+                {clip(h.label, width - 8)}
+              </Text>
+            ))}
           </Box>
-        ))}
-
-        {changes.length > 0 && <Text bold>─ Recent Reflection ─</Text>}
-        {changes.map(ch => (
-          <Text key={`ch-${ch.scope}-${ch.id}`}>{changeLine(ch, width - 12)}</Text>
-        ))}
-
-        <Text bold>─ 이번에 꺼낸 기억 {rc ? `(${rc.scope})` : ''} ─</Text>
-        {!rc && <Text dimColor>아직 없음 (프롬프트를 보내면 표시)</Text>}
-        {rc && rc.hits.length === 0 && <Text dimColor>관련 기억 없음: "{clip(rc.query, width - 18)}"</Text>}
-        {rc?.hits.map(h => (
-          <Box key={`rc-${h.id}`} flexDirection="column">
-            <Text>
-              {KIND_LABEL[h.kind] ?? h.kind} {clip(h.label, width - 6)}
-            </Text>
-            <Text dimColor>  {clip(`${h.score} · ${h.why.join(', ')}`, width)}</Text>
+        )}
+        {newPending > 0 && !isOpen && (
+          <Box key="new" flexDirection="row">
+            <Text color="magenta">✨ 새 기억 후보 {newPending}개 </Text>
+            <Button key="open" label="보기" onPress={() => update($, expanded, () => true)} />
+            <Text> </Text>
+            <Button key="later" label="나중에" onPress={() => update($, seenPending, () => items.length)} />
           </Box>
-        ))}
-
-        <Text bold>─ 승인 대기 {items.length} ─</Text>
-        {items.length === 0 && <Text dimColor>없음</Text>}
-        {items.slice(0, 6).map(it => (
-          <Box key={`it-${it.scope}-${it.pid}-${it.n}`} flexDirection="column">
-            <Text>
-              <Text dimColor>{it.scope === 'work' ? 'W ' : 'P '}</Text>
-              {clip(it.text, width - 2)}
-            </Text>
+        )}
+        {isOpen && (
+          <Box key="detail" flexDirection="column">
+            {all.map(st => (
+              <Text key={`st-${st.scope}`}>
+                <Text bold>{st.scope}</Text>
+                <Text dimColor> {st.health ? countsLine(st.health.counts) : '(health 없음)'}</Text>
+              </Text>
+            ))}
+            {changes.map(ch => (
+              <Text key={`ch-${ch.scope}-${ch.id}`} dimColor>{changeLine(ch, width - 12)}</Text>
+            ))}
+            <Text bold>승인 대기 {items.length}</Text>
+            {items.slice(0, 5).map(it => (
+              <Box key={`it-${it.scope}-${it.pid}-${it.n}`} flexDirection="column">
+                <Text>
+                  <Text dimColor>{it.scope === 'work' ? 'W ' : 'P '}</Text>
+                  {clip(it.text, width - 2)}
+                </Text>
+                <Box flexDirection="row">
+                  <Button key={`ok-${it.scope}-${it.pid}-${it.n}`} label="승인" onPress={() => amem($, options, `#${it.n} 승인`, it.scope, ['apply', it.pid, '--only', String(it.n)])} />
+                  <Text> </Text>
+                  <Button key={`no-${it.scope}-${it.pid}-${it.n}`} label="거절" onPress={() => amem($, options, `#${it.n} 거절`, it.scope, ['reject', it.pid, '--only', String(it.n)])} />
+                </Box>
+              </Box>
+            ))}
+            {items.length > 5 && <Text dimColor>…외 {items.length - 5}개 (amem review)</Text>}
             <Box flexDirection="row">
-              <Button key={`ok-${it.scope}-${it.pid}-${it.n}`} label="승인" onPress={() => amem($, options, `#${it.n} 승인`, it.scope, ['apply', it.pid, '--only', String(it.n)])} />
+              <Button key="refresh" label="새로고침" onPress={() => reload($, options)} />
               <Text> </Text>
-              <Button key={`no-${it.scope}-${it.pid}-${it.n}`} label="거절" onPress={() => amem($, options, `#${it.n} 거절`, it.scope, ['reject', it.pid, '--only', String(it.n)])} />
+              <Button key="close" label="접기" onPress={async () => { await update($, seenPending, () => items.length); await update($, expanded, () => false) }} />
             </Box>
+            {working && <Text color="yellow">⏳ {working} 실행 중…</Text>}
+            {!working && msg && <Text dimColor>{msg}</Text>}
           </Box>
-        ))}
-        {items.length > 6 && <Text dimColor>…외 {items.length - 6}개 (amem review)</Text>}
-
-        <Box flexDirection="row">
-          <Button key="refresh" label="새로고침" onPress={() => reload($, options)} />
-          <Text> </Text>
-          <Button key="run" label="기억 정리(LLM)" onPress={() => amem($, options, '기억 정리', 'personal', ['run'])} />
-        </Box>
-        {working && <Text color="yellow">⏳ {working} 실행 중…</Text>}
-        {!working && msg && <Text dimColor>{msg}</Text>}
-        <Text dimColor>
-          이번 세션 {turnCount}턴 · 갱신 {at ? new Date(at).toTimeString().slice(0, 8) : '-'}
-        </Text>
+        )}
       </Box>
     )
   })
