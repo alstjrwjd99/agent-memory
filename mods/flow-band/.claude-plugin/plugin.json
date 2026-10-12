@@ -1,0 +1,9 @@
+{
+  "name": "flow-band",
+  "version": "0.1.0",
+  "description": "프롬프트 위에 지금 작업 흐름(끝난 단계 → 지금 단계 → 남은 단계)과 '내 답 필요'를 보여줌. 프로젝트(폴더)별로 세션이 바뀌어도 유지",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "model": { "type": "string", "title": "요약 모델", "description": "흐름 요약에 쓸 모델 (기본 haiku, 턴마다 1회 정도)", "default": "haiku" }
+  }
+}

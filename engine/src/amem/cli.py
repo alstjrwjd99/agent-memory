@@ -37,6 +37,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--include-quiet", action="store_true", help="신호 없는 세션도 LLM에 보냄")
     p = sub.add_parser("reflect", help="새 episode로 판단 변화 제안 생성")
     p.add_argument("--dry-run", action="store_true", help="프롬프트만 출력")
+    p.add_argument("--redo", help="이 제안을 폐기하고 그 episode들로 다시 reflect")
     sub.add_parser("review", help="승인 대기 제안 목록")
     p = sub.add_parser("apply", help="제안 승인")
     p.add_argument("proposal")
@@ -119,6 +120,9 @@ def main(argv: list[str] | None = None) -> int:
         if not getattr(a, "dry_run", False):
             _commit(store, f"amem {a.cmd}: episode {len(r.episodes)}개" + (f", 제안 {path.stem}" if a.cmd == "run" and path else ""))
     elif a.cmd == "reflect":
+        if a.redo and not a.dry_run:
+            n = reflect.supersede(store, a.redo)
+            print(f"{a.redo} 폐기 → episode {n}개 다시 reflect")
         path = reflect.run(store, None if a.dry_run else llm.make(cfg.backend, cfg.model), dry_run=a.dry_run)  # type: ignore[arg-type]
         if path:
             print(f"제안 생성: {path.name} → `amem review`로 확인")

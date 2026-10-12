@@ -57,13 +57,15 @@ def apply_item(store: Store, pid: str, it: dict) -> str:
         store.save(item)
         return f"#{it['n']} {item.id} 근거 갱신 → conf {confidence.of(item.meta):.2f}"
     if op == "new_opinion":
-        meta = {"statement": it["statement"], "evidence": it["supports"], "counter_evidence": it["contradicts"],
+        meta = {"statement": it["statement"], "context": it.get("context", ""), "why_not_obvious": it.get("why_not_obvious", ""),
+                "evidence": it["supports"], "counter_evidence": it["contradicts"],
                 "valid_from": today(), "valid_to": None, "links": [], "source_proposal": pid}
         _history(meta, pid, it["reason"])
         item = store.add("opinion", meta, it["statement"])
         return f"#{it['n']} 새 opinion {item.id} (conf {confidence.of(meta):.2f})"
     if op == "new_procedure":
-        meta = {"trigger": it["trigger"], "rules": it["rules"], "evidence": it["derived_from"], "counter_evidence": [],
+        meta = {"trigger": it["trigger"], "rules": it["rules"], "why_not_obvious": it.get("why_not_obvious", ""),
+                "evidence": it["derived_from"], "counter_evidence": [],
                 "valid_from": today(), "valid_to": None, "source_proposal": pid}
         _history(meta, pid, it["reason"])
         body = f"트리거: {it['trigger']}\n\n" + "\n".join(f"{k}. {r}" for k, r in enumerate(it["rules"], 1))
@@ -144,9 +146,11 @@ def describe(it: dict) -> str:
         return f"[근거] {it['id']} +지지 {len(it['supports'])} +반례 {len(it['contradicts'])}: {it['reason']}"
     if op == "new_opinion":
         conf = confidence.confidence(len(it["supports"]), len(it["contradicts"]))
-        return f"[새 판단 {conf:.2f}] {it['statement']}"
+        why = f"\n        ↳ 상식 아닌 이유: {it['why_not_obvious']}" if it.get("why_not_obvious") else ""
+        return f"[새 판단 {conf:.2f}] {it['statement']}{why}"
     if op == "new_procedure":
-        return f"[새 절차] {it['trigger']}: {' → '.join(it['rules'])}"
+        why = f"\n        ↳ 상식 아닌 이유: {it['why_not_obvious']}" if it.get("why_not_obvious") else ""
+        return f"[새 절차] {it['trigger']}: {' → '.join(it['rules'])}{why}"
     if op == "observe":
         return f"[관찰] {it['subject']}: {it['summary'][:80]}"
     if op == "invalidate":

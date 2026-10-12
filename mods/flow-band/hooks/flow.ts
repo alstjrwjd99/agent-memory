@@ -1,0 +1,88 @@
+// 흐름 요약 파싱/표시 유틸 (순수 함수, 테스트 대상)
+import type { Flow, Step } from '../types'
+
+const STATUSES = new Set(['done', 'now', 'next'])
+
+// 모델 응답에서 첫 JSON 객체를 꺼내 검증. 이상하면 null
+export function parseFlow(text: string, project: string, now: number): Flow | null {
+  const m = /\{[\s\S]*\}/.exec(text)
+  if (!m) return null
+  try {
+    const d = JSON.parse(m[0]) as { goal?: unknown; steps?: unknown; waiting?: unknown }
+    const steps = (Array.isArray(d.steps) ? d.steps : [])
+      .filter((s): s is Step => !!s && typeof s.label === 'string' && STATUSES.has(s.status))
+      .map(s => ({ label: s.label.trim().slice(0, 40), status: s.status }))
+      .slice(0, 12)
+    if (steps.length === 0) return null
+    const waiting = typeof d.waiting === 'string' && d.waiting.trim() && d.waiting.trim() !== 'null' ? d.waiting.trim().slice(0, 120) : null
+    return { project, goal: typeof d.goal === 'string' ? d.goal.trim().slice(0, 60) : '', steps, waiting, at: now }
+  } catch {
+    return null
+  }
+}
+
+const MARK: Record<Step['status'], string> = { done: '✓', now: '●', next: '○' }
+
+// 폭에 맞게 흐름 한 줄: 지금 단계 중심으로 앞뒤를 줄이고 잘린 쪽엔 …
+export function stepsLine(steps: readonly Step[], width: number): string {
+  const cells = steps.map(s => `${MARK[s.status]} ${s.label}`)
+  const join = (xs: string[]) => xs.join(' → ')
+  if (join(cells).length <= width) return join(cells)
+  let now = steps.findIndex(s => s.status === 'now')
+  if (now < 0) now = steps.findIndex(s => s.status === 'next')
+  if (now < 0) now = steps.length - 1
+  let lo = now
+  let hi = now
+  // 지금 단계부터 뒤(남은 단계) 하나, 앞(끝난 단계) 하나씩 번갈아 넓힌다
+  for (let grew = true; grew; ) {
+    grew = false
+    for (const side of ['hi', 'lo'] as const) {
+      const nlo = side === 'lo' ? lo - 1 : lo
+      const nhi = side === 'hi' ? hi + 1 : hi
+      if (nlo < 0 || nhi >= cells.length) continue
+      const text = (nlo > 0 ? '… ' : '') + join(cells.slice(nlo, nhi + 1)) + (nhi < cells.length - 1 ? ' …' : '')
+      if (text.length <= width) {
+        lo = nlo
+        hi = nhi
+        grew = true
+      }
+    }
+  }
+  const text = (lo > 0 ? '… ' : '') + join(cells.slice(lo, hi + 1)) + (hi < cells.length - 1 ? ' …' : '')
+  return text.length <= width ? text : `${cells[now]}`.slice(0, width)
+}
+
+// 요약할 대화: 최근 메시지 텍스트 + 쓴 도구 이름 (길이 제한)
+export function transcriptDigest(messages: readonly { role: string; text: string; toolUses?: readonly { tool?: string }[] }[], max = 40, per = 400): string {
+  return messages
+    .slice(-max)
+    .map(m => {
+      const tools = (m.toolUses ?? []).map(t => t.tool).filter(Boolean)
+      const text = m.text.replace(/\s+/g, ' ').trim().slice(0, per)
+      return `[${m.role === 'user' ? 'U' : 'A'}] ${text}${tools.length ? ` (도구: ${tools.join(',')})` : ''}`
+    })
+    .filter(l => l.length > 5)
+    .join('\n')
+}
+
+export function buildPrompt(digest: string, prev: Flow | null): string {
+  return `아래는 사용자와 AI 코딩 에이전트의 최근 대화다. 사용자가 다른 일을 하다 돌아왔을 때 한눈에 보도록 "작업 흐름"을 요약하라.
+
+규칙:
+- goal: 지금 하고 있는 큰 목표 한 구절 (20자 이내)
+- steps: 이 목표의 단계 3~8개. status는 done(끝남) / now(지금, 1개) / next(남음). label은 12자 이내 명사구
+- 이전 흐름이 있으면 그 단계 이름을 최대한 유지하고 상태만 갱신하라. 목표가 바뀌었으면 새로 짜라
+- waiting: 에이전트의 마지막 답변이 사용자에게 결정/확인을 묻고 끝났으면 그 질문을 25자 이내로, 아니면 null
+- JSON만 출력: {"goal": "...", "steps": [{"label": "...", "status": "done"}], "waiting": "..." 또는 null}
+
+## 이전 흐름
+${prev ? JSON.stringify({ goal: prev.goal, steps: prev.steps, waiting: prev.waiting }) : '(없음)'}
+
+## 최근 대화
+${digest}`
+}
+
+// 폴더 경로 → 프로젝트 이름 (마지막 폴더)
+export const projectOf = (cwd: string): string => cwd.replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop() || cwd
+
+export const storeKey = (cwd: string): string => `flow:${cwd.replace(/\\/g, '/').toLowerCase()}`

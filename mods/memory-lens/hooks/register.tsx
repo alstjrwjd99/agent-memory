@@ -95,7 +95,7 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'memory-lens' }, async $ => {
     await reload($, options)
     const { isPlaced } = await $.ui.open({ id: PANE, title: TITLE })
-    return { text: isPlaced ? 'memory-lens: 기억 현황 pane을 열었어요.' : '터미널 폭이 좁아 pane을 못 띄웠어요. 창을 넓혀주세요.' }
+    return { text: isPlaced ? '기억 현황 pane을 열었어요.' : '터미널 폭이 좁아 pane을 못 띄웠어요. 창을 넓혀주세요.' }
   })
 
   // recall: 사용자가 보낸 프롬프트에 관련 기억을 보이지 않는 context로 붙인다

@@ -1,9 +1,24 @@
 {
   "name": "agent-memory",
-  "owner": { "name": "minseok" },
+  "owner": {
+    "name": "minseok"
+  },
   "plugins": [
-    { "name": "memory-events", "source": "./mods/memory-events" },
-    { "name": "memory-lens", "source": "./mods/memory-lens" },
-    { "name": "env-guard", "source": "./mods/env-guard" }
+    {
+      "name": "memory-events",
+      "source": "./mods/memory-events"
+    },
+    {
+      "name": "memory-lens",
+      "source": "./mods/memory-lens"
+    },
+    {
+      "name": "env-guard",
+      "source": "./mods/env-guard"
+    },
+    {
+      "name": "flow-band",
+      "source": "./mods/flow-band"
+    }
   ]
 }

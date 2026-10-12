@@ -19,8 +19,8 @@ EPISODES = obj(
 
 REFLECTION = obj(
     evidence_updates=arr(obj(id=STR, supports=STRS, contradicts=STRS, reason=STR)),
-    new_opinions=arr(obj(statement=STR, supports=STRS, contradicts=STRS, reason=STR)),
-    new_procedures=arr(obj(trigger=STR, rules=STRS, derived_from=STRS, reason=STR)),
+    new_opinions=arr(obj(statement=STR, context=STR, why_not_obvious=STR, supports=STRS, contradicts=STRS, reason=STR)),
+    new_procedures=arr(obj(trigger=STR, rules=STRS, why_not_obvious=STR, derived_from=STRS, reason=STR)),
     observations=arr(obj(subject=STR, summary=STR, sources=STRS)),
     invalidations=arr(obj(id=STR, reason=STR)),
     # 기존 판단/절차의 문장 자체를 고침 (opinion은 statement, procedure는 rules 사용, 안 쓰는 쪽은 빈 값)

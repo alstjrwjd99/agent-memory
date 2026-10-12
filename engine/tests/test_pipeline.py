@@ -59,10 +59,10 @@ def test_reflect_filters_unknown_ids_and_apply_updates_confidence(store):
     llm = FakeLLM({
         "evidence_updates": [],
         "new_opinions": [
-            {"statement": "UI는 사용자/행위/데이터를 먼저 정의해야 한다", "supports": [e1, e2, "ep_fake"], "contradicts": [], "reason": "2회 반복"},
-            {"statement": "근거 없는 판단", "supports": ["ep_fake"], "contradicts": [], "reason": "x"},
+            {"statement": "UI는 사용자/행위/데이터를 먼저 정의해야 한다", "why_not_obvious": "이 프로젝트에서 두 번 놓쳤음: 화면부터 만들다 되돌림", "supports": [e1, e2, "ep_fake"], "contradicts": [], "reason": "2회 반복"},
+            {"statement": "근거 없는 판단", "why_not_obvious": "이 프로젝트에서 두 번 놓쳤음: 화면부터 만들다 되돌림", "supports": ["ep_fake"], "contradicts": [], "reason": "x"},
         ],
-        "new_procedures": [{"trigger": "새 UI 설계", "rules": ["사용자 정의", "행위 정의", "데이터 확인"], "derived_from": [e1, e2], "reason": "반복"}],
+        "new_procedures": [{"trigger": "새 UI 설계", "rules": ["사용자 정의", "행위 정의", "데이터 확인"], "why_not_obvious": "이 프로젝트에서 두 번 놓쳤음: 화면부터 만들다 되돌림", "derived_from": [e1, e2], "reason": "반복"}],
         "observations": [{"subject": "acme", "summary": "UI 요구가 자주 바뀜", "sources": [e3]}],
         "invalidations": [{"id": "op_없는것", "reason": "x"}],
     })
@@ -149,8 +149,8 @@ def test_duplicate_and_contradictory_citations_do_not_inflate_confidence(store):
     e1, e2 = _episodes(store, 2)
     p = _reflect_with(
         store,
-        new_opinions=[{"statement": "s", "supports": [e1, e1, e1, e2], "contradicts": [e2], "reason": "r"}],
-        new_procedures=[{"trigger": "t", "rules": ["a"], "derived_from": [e1, e1], "reason": "중복으로 2개 흉내"}],
+        new_opinions=[{"statement": "s", "why_not_obvious": "이 프로젝트에서 두 번 놓쳤음: 화면부터 만들다 되돌림", "supports": [e1, e1, e1, e2], "contradicts": [e2], "reason": "r"}],
+        new_procedures=[{"trigger": "t", "rules": ["a"], "why_not_obvious": "이 프로젝트에서 두 번 놓쳤음: 화면부터 만들다 되돌림", "derived_from": [e1, e1], "reason": "중복으로 2개 흉내"}],
     )
     assert [it["op"] for it in p["items"]] == ["new_opinion"]
     assert p["items"][0]["supports"] == [e1] and p["items"][0]["contradicts"] == []
@@ -229,3 +229,34 @@ def test_cli_only_empty_is_rejected(store, tmp_path, monkeypatch):
     config.write_default(tmp_path / "c.yaml", "mac", str(store.root), None)
     with pytest.raises(SystemExit, match="항목 번호"):
         cli.main(["apply", "x", "--only", ""])
+
+
+def test_common_sense_without_reason_is_dropped(store):
+    e1, e2 = _episodes(store, 2)
+    p = _reflect_with(
+        store,
+        new_opinions=[
+            {"statement": "테스트는 중요하다", "context": "", "why_not_obvious": "", "supports": [e1], "contradicts": [], "reason": "r"},
+            {"statement": "e2e 확인", "context": "", "why_not_obvious": "없음", "supports": [e1], "contradicts": [], "reason": "r"},
+            {"statement": "acme에서 빈 배열 설계는 A 타입 폴백을 탄다", "context": "acme 규격서",
+             "why_not_obvious": "엔진 폴백 규칙이라 코드만 봐선 안 보임, 3번 놓침", "supports": [e1, e2], "contradicts": [], "reason": "r"},
+        ],
+    )
+    assert [it["statement"] for it in p["items"]] == ["acme에서 빈 배열 설계는 A 타입 폴백을 탄다"]
+    review.decide(store, p["id"], accept=True)
+    [op] = store.items("opinion")
+    assert op.meta["why_not_obvious"].startswith("엔진 폴백") and op.meta["context"] == "acme 규격서"
+    assert "상식 아닌 이유" in review.describe(p["items"][0])
+
+
+def test_redo_reconsiders_episodes_but_not_after_apply(store):
+    import pytest
+    e1, e2 = _episodes(store, 2)
+    p1 = _reflect_with(store)
+    assert reflect.fresh_episodes(store) == []
+    assert reflect.supersede(store, p1["id"]) == 2
+    assert {e.id for e in reflect.fresh_episodes(store)} == {e1, e2}
+    p2 = _reflect_with(store, observations=[{"subject": "acme", "summary": "s", "sources": [e1]}])
+    review.decide(store, p2["id"], accept=True)
+    with pytest.raises(SystemExit, match="이미 적용"):
+        reflect.supersede(store, p2["id"])
